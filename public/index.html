@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pulse Monitor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232f7bff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M22 12h-4l-3 9L9 3l-3 9H2'/></svg>">
+<meta name="description" content="Self-hosted monitor for servers, services and n8n workflows.">
+<meta name="theme-color" content="#0b1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pulse">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/pulse.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo"><span id="logoIcon"></span><b>Pulse Monitor</b></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="env">
+      <div class="tile" id="envTile"></div>
+      <div class="txt"><b>Production</b><small><span class="dot up live" id="envDot"></span><span id="envState">loading…</span></small></div>
+    </div>
+    <div class="side-foot"><span id="who"></span><button id="signout" type="button"></button></div>
+  </aside>
+
+  <div class="content">
+    <header class="topbar">
+      <div><h1 id="pageTitle">Overview</h1><p id="pageSub">Loading…</p></div>
+      <div class="tools">
+        <span class="field" id="hostField"><select id="hostSel" title="Host"></select></span>
+        <span class="field" id="rangeField"><select id="rangeSel" title="Time range"></select></span>
+        <button class="btn primary" id="addBtn" type="button">Add monitor</button>
+        <button class="icon-btn" id="refreshBtn" type="button" title="Run every check now"></button>
+        <span class="stamp" id="stamp"></span>
+      </div>
+    </header>
+    <main class="page" id="page"></main>
+  </div>
+</div>
+<nav class="tabbar" id="tabbar" aria-label="Sections"></nav>
+
+<script src="/vendor/chart.umd.js"></script>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

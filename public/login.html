@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Pulse Monitor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232f7bff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M22 12h-4l-3 9L9 3l-3 9H2'/></svg>">
+<link rel="stylesheet" href="/css/pulse.css">
+</head>
+<body>
+<div class="login-wrap">
+  <form class="login-card" id="f">
+    <div class="brand"><span id="brand"></span><span>Pulse Monitor</span></div>
+    <h1>Sign in</h1>
+    <p>Self-hosted monitoring for servers, services and n8n workflows.</p>
+    <label class="fl">Password<input id="pw" type="password" autocomplete="current-password" placeholder="PASSWORD from .env" required autofocus></label>
+    <button class="btn primary" type="submit">Sign in</button>
+    <p class="err" id="err" role="alert"></p>
+    <div class="note">Sessions last <span class="kv-code">SESSION_HOURS</span> (72 by default). Six failed logins lock this IP for ten minutes.</div>
+  </form>
+</div>
+<script type="module" src="/login.js"></script>
+</body>
+</html>

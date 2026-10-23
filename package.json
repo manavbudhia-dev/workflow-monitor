@@ -1,0 +1,25 @@
+{
+  "name": "workflow-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted monitoring dashboard for a small server fleet",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "agent": "node agent/agent.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "chart.js": "^4.5.1",
+    "express": "^4.22.3",
+    "node-telegram-bot-api": "^2.1.0",
+    "systeminformation": "^5.33.16"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}
