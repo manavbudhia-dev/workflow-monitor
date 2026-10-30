@@ -3,8 +3,10 @@
  * Shell: cache-first with a background refresh, so a cold phone opens the dashboard offline.
  * API:   network-first, and the last good JSON response per URL is kept as the offline fallback.
  * Log tail (SSE) and every non-GET are never touched.
+ * Bump V when a SHELL file changes: activate drops any cache that does not start with it, which is
+ * the only way a returning phone stops being served the old copy for one extra visit.
  */
-const V = 'pulse-v1';
+const V = 'pulse-v2';
 const SHELL = [
   '/', '/index.html', '/login.html', '/login.js', '/manifest.webmanifest',
   '/css/pulse.css', '/vendor/chart.umd.js',

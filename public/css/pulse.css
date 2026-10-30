@@ -467,11 +467,21 @@ body.net-off .topbar { padding-top: 52px; }
   .topbar p { display: none; }
   .stamp { display: none; }
   .btn, .icon-btn, .field, .search, .search input, .tabs button, .menu button { min-height: 44px; }
+  /* The readonly field sits in the same row as its 44px Copy button, so 34px showed as a step. */
+  .copy-row input { min-height: 44px; }
   .btn.sm { height: 44px; padding: 0 14px; font-size: 13.5px; border-radius: var(--r-sm); }
   .field.sm { height: 44px; font-size: 13.5px; }
   /* The pill is 44px but a bare select stays ~18px tall, so taps near its edge would miss the control. */
   .field select, .field input { height: 100%; }
-  .icon-btn { width: 44px; }
+  /* Three components hardcode a smaller box at higher specificity, so a bare .icon-btn rule above
+     loses on width and only min-height lands — that leaves a 26-30px sliver to hit. Naming them is
+     what actually reaches 44px. */
+  .icon-btn, .wf .top .icon-btn, .modal-head .icon-btn, .tbl .menu-cell .icon-btn { width: 44px; height: 44px; }
+  /* The row menu is absolutely positioned in the card's corner, so the title needs its own clearance. */
+  .tbl tr:has(.menu-cell) { padding-right: 52px; }
+  /* Modal fields and checkbox rows were never part of the 44px group, so they stayed at 36px/16px. */
+  label.fl > input, label.fl > select { min-height: 44px; }
+  label.chk { min-height: 44px; }
   .menu { max-width: calc(100vw - 20px); }
   .menu button { padding: 11px 12px; }
   .panel-head { flex-wrap: wrap; }
