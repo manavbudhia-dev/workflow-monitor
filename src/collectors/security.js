@@ -19,6 +19,9 @@ export function parseLine(line) {
   let m;
   if ((m = /Failed password for (?:invalid user )?(\S+) from (\S+?)(?: port|$)/i.exec(line))) return { kind: 'ssh_fail', user: m[1], ip: clean(m[2]) };
   if ((m = /Authentication failed for (?:invalid user )?(\S+) from (\S+?)(?: port|$)/i.exec(line))) return { kind: 'ssh_fail', user: m[1], ip: clean(m[2]) };
+  // Key-only servers (OCI default) never log "Failed password"; bots show up as these instead.
+  if ((m = /Invalid user (\S*) from (\S+?)(?: port|$)/i.exec(line))) return { kind: 'ssh_fail', user: m[1] || '(empty)', ip: clean(m[2]) };
+  if ((m = /(?:Connection closed by|Disconnected from) authenticating user (\S+) (\S+?) port/i.exec(line))) return { kind: 'ssh_fail', user: m[1], ip: clean(m[2]) };
   if ((m = /Accepted (\S+) for (?:invalid user )?(\S+) from (\S+)/i.exec(line))) {
     const [, how, user, ip] = m;
     return { kind: user === 'root' ? 'ssh_root' : 'ssh_ok', user, ip: clean(ip), detail: how };
