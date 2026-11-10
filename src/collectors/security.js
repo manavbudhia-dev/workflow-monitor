@@ -81,12 +81,15 @@ function readLogFile(p) {
   try { st = fs.statSync(p); } catch { return { error: `${p} not readable (${process.platform === 'linux' ? 'is the service user in the adm group?' : 'file missing'})` }; }
   const key = `sec_off:${p}`;
   const prev = Number(setting(key, -1));
-  if (prev < 0 || st.size < prev) { if (prev < 0) setSetting(key, st.size); return { text: '', first: true }; }
-  const size = Math.min(st.size - prev, 512 * 1024);
+  if (prev < 0) { setSetting(key, st.size); return { text: '', first: true }; }
+  // Smaller than our cursor means logrotate swapped in a fresh file: read it from the top.
+  // (Before, the cursor was never reset, so every scan after the weekly rotation read nothing.)
+  const start = st.size < prev ? 0 : prev;
+  const size = Math.min(st.size - start, 512 * 1024);
   const buf = Buffer.alloc(size);
   const fd = fs.openSync(p, 'r');
-  try { fs.readSync(fd, buf, 0, size, prev); } finally { fs.closeSync(fd); }
-  setSetting(key, prev + size);
+  try { fs.readSync(fd, buf, 0, size, start); } finally { fs.closeSync(fd); }
+  setSetting(key, start + size);
   return { text: buf.toString('utf8') };
 }
 
