@@ -6,7 +6,8 @@
 import { cfg } from '../config.js';
 import { q, get, run, now, monitorConfig, addCheck, updateMonitorAfterCheck } from '../db.js';
 import { send } from '../alerts/telegram.js';
-import { sys } from '../shell.js';
+import { cooldownOk } from '../notify.js';
+import { cap, sys } from '../shell.js';
 
 const norm = (s) => String(s || '').trim().replace(/\s+/g, ' ');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -51,6 +52,17 @@ const logRow = (m, r) => run(
 const busy = new Set();
 
 /**
+ * pm2 talks to the PM2 daemon of the user that runs it. sys() prefixes sudo, which reached root's
+ * (empty) PM2 instead of the service user's apps, so every pm2 auto-restart failed. systemctl and
+ * service still need root and keep going through sys().
+ */
+export const runRestart = (bin, args, ms = 25000) => (bin === 'pm2' ? cap(bin, args, ms) : sys(bin, args, ms));
+
+/** Restarts that really ran (not refused) in the last hour, across every monitor. */
+export const restartsLastHour = () =>
+  get("SELECT COUNT(*) n FROM restart_log WHERE started_at>? AND result<>'blocked' AND result<>'breaker'", now() - 36e5).n;
+
+/**
  * Called by runMonitor after a failing check has been recorded.
  * `recheck` re-runs the raw check function so we can grade the restart without recursing.
  */
@@ -68,7 +80,7 @@ export async function maybeRestart(m, out, recheck) {
 
   busy.add(m.id);
   try {
-    const attempts = get("SELECT COUNT(*) n FROM restart_log WHERE monitor_id=? AND started_at>=? AND result<>'blocked'", m.id, since).n;
+    const attempts = get("SELECT COUNT(*) n FROM restart_log WHERE monitor_id=? AND started_at>=? AND result NOT IN ('blocked','breaker')", m.id, since).n;
     const inc = get('SELECT id, ai FROM incidents WHERE monitor_id=? AND state=? ORDER BY id DESC LIMIT 1', m.id, 'open');
     const v = checkCommand(s.cmd);
     if (!v.ok) {
@@ -79,9 +91,20 @@ export async function maybeRestart(m, out, recheck) {
       return { blocked: v.why };
     }
 
+    // Circuit breaker: something that makes many services fall over at once (disk full, OOM, a bad
+    // deploy) must not turn into a restart storm. Refuse once the hourly budget is spent, tell once.
+    const used = restartsLastHour();
+    if (used >= cfg.restartMaxPerHour) {
+      logRow(m, { incident_id: inc?.id, command: v.cmd, attempt: attempts + 1, ok: false, result: 'breaker', output: `refused: ${used} restarts in the last hour (RESTART_MAX_PER_HOUR=${cfg.restartMaxPerHour})`, started_at: now() });
+      if (cooldownOk('restart:breaker', 60)) await send(`🧯 *AUTO-RESTART PAUSED*
+${used} restarts in the last hour hit RESTART_MAX_PER_HOUR=${cfg.restartMaxPerHour}.
+${m.name} was not restarted — something bigger may be wrong (disk, memory, a bad deploy).`);
+      return { blocked: 'restart circuit breaker' };
+    }
+
     const started = now();
     let code = null, text = '';
-    try { text = await sys(v.bin, v.args, 25000); code = 0; } catch (e) {
+    try { text = await runRestart(v.bin, v.args, 25000); code = 0; } catch (e) {
       code = typeof e.code === 'number' ? e.code : null;
       text = `${e.stdout || ''}${e.stderr || ''}`.trim() || e.message;
     }

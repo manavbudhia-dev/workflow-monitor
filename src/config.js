@@ -85,6 +85,8 @@ export const cfg = {
   restartWaitSec: num('RESTART_WAIT_SEC', 15),
   restartRetries: num('RESTART_MAX_RETRIES', 3),
   restartCooldownMin: num('RESTART_COOLDOWN_MIN', 10),
+  // Circuit breaker: across ALL monitors, no more restarts than this per rolling hour.
+  restartMaxPerHour: Math.max(num('RESTART_MAX_PER_HOUR', 10), 1),
 
   backupEnabled: bool('BACKUP_ENABLED', true),
 

@@ -142,12 +142,20 @@ function wire(b) {
     if (!isOwner(ctx)) return answer(ctx, '⛔ Not an owner id, /restart refused.');
     if (process.platform !== 'linux') return answer(ctx, `⚠️ /restart only works on the Linux server (this host runs ${process.platform}).`);
     if (!/^[A-Za-z0-9@._:+-]+$/.test(svc.replace(/^pm2:/, ''))) return answer(ctx, '⛔ Service name may only contain letters, digits and @ . _ + - :');
-    const { cap, sys } = await import('../shell.js');
+    const { sys } = await import('../shell.js');
+    const { checkCommand, runRestart } = await import('../collectors/restart.js');
     const who = ctx.from?.username || ctx.from?.id;
+    const isPm2 = svc.startsWith('pm2:');
+    // Same whitelist as auto-restart: a chat message may only run a command already in RESTART_ALLOW,
+    // so a stolen or mistyped /restart can never take down sshd, docker or caddy by accident.
+    const unit = isPm2 ? svc.slice(4) : svc;
+    const tries = isPm2 ? [`pm2 restart ${unit}`] : [`systemctl restart ${unit}`, `systemctl restart ${unit.replace(/\.service$/, '')}`, `systemctl restart ${unit}.service`];
+    const v = tries.map(checkCommand).find((x) => x.ok);
+    if (!v) return answer(ctx, `⛔ Not in RESTART_ALLOW, refused.\nAllowed:\n${cfg.restartAllow.map((x) => `  ${x}`).join('\n') || '  (none)'}`);
+    console.log(`[telegram] /restart by ${who} (${ctx.from?.id}): ${v.cmd}`);
     try {
-      const isPm2 = svc.startsWith('pm2:');
-      const out = isPm2 ? await cap('pm2', ['restart', svc.slice(4)]) : await sys('systemctl', ['restart', svc]);
-      const state = isPm2 ? '' : await sys('systemctl', ['is-active', svc]).catch(() => '?');
+      const out = await runRestart(v.bin, v.args);
+      const state = isPm2 ? '' : await sys('systemctl', ['is-active', v.args[1]]).catch(() => '?');
       return ctx.reply(`♻️ Restarted ${isPm2 ? `pm2 app "${svc.slice(4)}"` : svc} by @${who}\n${state ? `is-active: ${state}\n` : ''}${(out || '(no output)').slice(-500)}`);
     } catch (e) { return ctx.reply(`❌ Restart ${svc} failed: ${e.message}`); }
   });

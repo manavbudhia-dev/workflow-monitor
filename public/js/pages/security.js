@@ -9,6 +9,7 @@ const KIND = {
   ssh_fail: ['failed', 'down'], ssh_ok: ['accepted', 'up'], ssh_root: ['root login', 'down'],
   brute: ['brute force', 'down'], new_ip: ['new login IP', 'degraded'], root: ['root login', 'down'],
   port_new: ['new port', 'degraded'], port_gone: ['port closed', 'pending'], port_open: ['listening', 'up'], banned: ['banned', 'down'],
+  web_login: ['dashboard login', 'up'], web_lock: ['dashboard locked', 'down'],
 };
 const kindBadge = (k) => {
   const [label, s] = KIND[k] || [k, 'pending'];

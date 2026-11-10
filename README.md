@@ -51,7 +51,7 @@ Manual run: `npm install && npm start` (agent: `npm run agent`).
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `PORT`, `BIND_HOST`, `PUBLIC_URL` | 4180, 0.0.0.0, local | web listen address; `PUBLIC_URL` builds the ping URLs |
-| `PASSWORD` | `admin` | dashboard login — **set this** |
+| `PASSWORD` | `admin` | dashboard login — **set this**. A default or <8-character password only works from the box itself (SSH tunnel); remote logins are refused |
 | `SESSION_SECRET` | random, kept in the db | signs the login cookie — set a long random string |
 | `TRUST_PROXY` | loopback | which proxy may set the client IP (login lock); `false` when nothing proxies the app |
 | `DB_PATH`, `RETENTION_DAYS` | ./data/monitor.db, 7 | SQLite file, and how long checks/metrics/incidents are kept |
@@ -68,6 +68,7 @@ Manual run: `npm install && npm start` (agent: `npm run agent`).
 | `RESTART_ALLOW` | empty | the **only** commands the app may run, `;`-separated — see [Auto-restart](#auto-restart) |
 | `RESTART_ALLOW_BINS`, `RESTART_ALLOW_VERBS` | systemctl/service/pm2 · restart/start/reload/… | extra guards on the first and second word of a command |
 | `RESTART_WAIT_SEC`, `RESTART_MAX_RETRIES`, `RESTART_COOLDOWN_MIN` | 15, 3, 10 | wait before re-checking, attempt budget, and gap between attempts (per-monitor overrides) |
+| `RESTART_MAX_PER_HOUR` | 10 | circuit breaker: total automatic restarts per rolling hour across all monitors |
 | `BACKUP_ENABLED` | true | master switch for monitors of type `backup` |
 | `SECURITY_ENABLED`, `SECURITY_INTERVAL_SEC` | true, 60 | ssh/port/fail2ban scan on/off and how often |
 | `AUTH_LOG_SOURCE` | /var/log/auth.log | `/var/log/auth.log`, `journalctl:ssh`, or `file:/path` (handy for testing) |
@@ -371,8 +372,9 @@ Useful once both are set: **Integrations → Send test message**.
 
 `/status` · `/incidents [n]` · `/summary` · `/check` · `/restart n8n.service` · `/restart pm2:api`
 
-`/restart` only runs for ids in `TELEGRAM_OWNER_IDS` (empty = everyone in `TELEGRAM_CHAT_IDS`), and
-needs the narrow sudoers rule `install.sh` writes. Restarting another user's PM2 app is not possible.
+`/restart` only runs for ids in `TELEGRAM_OWNER_IDS` (empty = everyone in `TELEGRAM_CHAT_IDS`), and only
+for a command that is already in `RESTART_ALLOW` (`/restart n8n` → `systemctl restart n8n`). The bot ignores
+every chat that is not configured. Restarting another user's PM2 app is not possible.
 
 ## Security notes
 
@@ -453,3 +455,15 @@ public/                dashboard (vanilla ES modules + Chart.js served from node
   reload once you are back online, updates it.
 - `Settings → Phone app` says *VAPID keys missing*: push is off until both `VAPID_PUBLIC_KEY` and
   `VAPID_PRIVATE_KEY` are set (`node scripts/gen-vapid.mjs`), then restart the service.
+
+## Guardrails
+
+- **Weak password lock** — a default or short `PASSWORD` disables remote logins; only `127.0.0.1`
+  (an SSH tunnel) can sign in until it is changed.
+- **Login throttling** — 6 wrong passwords lock that IP for 10 minutes (with a Telegram alert and a
+  `dashboard locked` row on the Security page), plus a global cap of 30 attempts a minute.
+- **Cookies & headers** — `HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS, HSTS over HTTPS,
+  cross-site POSTs refused by Origin check, strict CSP.
+- **Restart whitelist everywhere** — auto-restart and Telegram `/restart` can only run `RESTART_ALLOW`
+  commands, never through a shell.
+- **Restart circuit breaker** — at most `RESTART_MAX_PER_HOUR` automatic restarts an hour in total.

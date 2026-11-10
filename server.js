@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cfg } from './src/config.js';
-import { router as authRouter, auth } from './src/routes/auth.js';
+import { router as authRouter, auth, weakPassword } from './src/routes/auth.js';
 import { router as agentRouter } from './src/routes/agent.js';
 import { router as monitorsRouter } from './src/routes/monitors.js';
 import { router as dataRouter } from './src/routes/data.js';
@@ -23,6 +23,9 @@ app.set('trust proxy', cfg.trustProxy);
 app.use(express.json({ limit: '256kb' }));
 app.use((req, res, next) => {
   res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('referrer-policy', 'same-origin');
+  res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  if (req.secure) res.setHeader('strict-transport-security', 'max-age=15552000');
   res.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");
   next();
 });
@@ -60,7 +63,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { closeAllStreams
 app.listen(cfg.port, cfg.bind, () => {
   const local = get('SELECT * FROM servers WHERE is_local=1');
   console.log(`workflow-monitor listening on http://${cfg.bind === '0.0.0.0' ? 'localhost' : cfg.bind}:${cfg.port}  (public: ${cfg.publicUrl})`);
-  console.log(`  login password: ${cfg.password === 'admin' ? 'admin (CHANGE PASSWORD IN .ENV!)' : 'set from .env'}`);
+  console.log(`  login password: ${weakPassword() ? 'WEAK/DEFAULT — remote logins disabled until PASSWORD in .env is 8+ chars and not a default' : 'set from .env'}`);
   console.log(`  metrics every ${cfg.metricsIntervalSec}s, checks every ${cfg.checkIntervalSec}s, db ${cfg.dbPath}`);
   console.log(`  servers: ${servers().length}, telegram: ${cfg.telegramToken ? 'configured' : 'off'}, ai: ${cfg.aiProvider}${cfg.apiKey ? '' : ' (no key)'}`);
   if (local) console.log(`  local agent id ${local.id}`);
