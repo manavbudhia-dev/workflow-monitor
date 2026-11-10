@@ -3,7 +3,7 @@ import { now, monitorConfig, monitors, servers } from '../db.js';
 import { edge } from '../notify.js';
 import { runMonitor } from './checks.js';
 import { scanSecurity } from './security.js';
-import { maybeDailySummary } from '../alerts/telegram.js';
+import { maybeDailySummary, startBot } from '../alerts/telegram.js';
 
 const lastEval = new Map();
 
@@ -17,13 +17,31 @@ function due(m, c) {
   return now() - (lastEval.get(m.id) || 0) >= (+c.interval_sec || cfg.checkIntervalSec) * 1000;
 }
 
+/**
+ * Due monitors run side by side, not one after another: a single slow check (an HTTP timeout,
+ * or an auto-restart that waits RESTART_WAIT_SEC) used to hold every other monitor back for
+ * that long. runMonitor() itself guarantees one check per monitor at a time, so a check that
+ * outlives its interval is simply joined, never doubled.
+ */
 export async function tickChecks() {
+  const jobs = [];
   for (const m of monitors(true)) {
     const c = monitorConfig(m);
     if (!due(m, c)) continue;
     lastEval.set(m.id, now());
-    try { await runMonitor(m); } catch (e) { console.error(`[check ${m.id}]`, e.message); }
+    jobs.push(runMonitor(m).catch((e) => console.error(`[check ${m.id}]`, e.message)));
   }
+  await Promise.all(jobs);
+}
+
+/** Run fn on an interval, but never start a round while the previous one is still going. */
+function every(ms, label, fn) {
+  let busy = false;
+  return setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try { await fn(); } catch (e) { console.error(`[${label}]`, e.message); } finally { busy = false; }
+  }, ms);
 }
 
 /** A remote agent that stops pushing is itself an outage (a new one that has not reported yet is not). */
@@ -41,13 +59,14 @@ async function checkAgents() {
 
 export function startScheduler() {
   const fast = Math.min(30, cfg.checkIntervalSec) * 1000;
+  // Not wrapped in every(): overlapping ticks are safe (lastEval is set before any await and
+  // runMonitor joins a check already in flight), and one long restart must not stall the rest.
   const a = setInterval(() => tickChecks().catch((e) => console.error('[checks]', e.message)), fast);
-  const b = setInterval(() => checkAgents().catch((e) => console.error('[agents]', e.message)), 60e3);
+  const b = every(60e3, 'agents', checkAgents);
   const c = setInterval(() => maybeDailySummary(), 60e3);
-  const d = cfg.securityEnabled
-    ? setInterval(() => scanSecurity().catch((e) => console.error('[security]', e.message)), Math.max(cfg.securityIntervalSec, 15) * 1000)
-    : null;
+  const d = cfg.securityEnabled ? every(Math.max(cfg.securityIntervalSec, 15) * 1000, 'security', scanSecurity) : null;
   [a, b, c, d].forEach((h) => h && h.unref());
+  startBot();
   setTimeout(() => tickChecks().catch(() => {}), 2500).unref();
   if (d) setTimeout(() => scanSecurity().catch((e) => console.error('[security]', e.message)), 6000).unref();
   return { a, b, c, d };

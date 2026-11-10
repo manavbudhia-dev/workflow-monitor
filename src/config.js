@@ -41,7 +41,14 @@ export const cfg = {
   dbPath: process.env.DB_PATH || path.resolve('data/monitor.db'),
 
   password: process.env.PASSWORD || 'admin',
-  sessionSecret: process.env.SESSION_SECRET || 'change-me-session-secret',
+  sessionSecret: process.env.SESSION_SECRET || '',
+  // Express "trust proxy": loopback fits Caddy/nginx on the same box. Set a number (hops) or
+  // a subnet if the proxy lives elsewhere, or false when the app is reached directly.
+  trustProxy: (() => {
+    const v = (process.env.TRUST_PROXY ?? 'loopback').trim();
+    if (/^(true|false)$/i.test(v)) return /^true$/i.test(v);
+    return /^\d+$/.test(v) ? +v : v;
+  })(),
   sessionHours: num('SESSION_HOURS', 72),
 
   metricsIntervalSec: num('METRICS_INTERVAL_SEC', 30),

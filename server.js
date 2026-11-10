@@ -17,7 +17,9 @@ import { openIncidents, servers, get } from './src/db.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.disable('x-powered-by');
-app.set('trust proxy', true);
+// Only a proxy on this box (Caddy/nginx) may set the client IP. `true` trusted the left-most
+// X-Forwarded-For entry, which any client can write, so the 6-failures login lock was bypassable.
+app.set('trust proxy', cfg.trustProxy);
 app.use(express.json({ limit: '256kb' }));
 app.use((req, res, next) => {
   res.setHeader('x-content-type-options', 'nosniff');

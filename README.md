@@ -52,7 +52,8 @@ Manual run: `npm install && npm start` (agent: `npm run agent`).
 | --- | --- | --- |
 | `PORT`, `BIND_HOST`, `PUBLIC_URL` | 4180, 0.0.0.0, local | web listen address; `PUBLIC_URL` builds the ping URLs |
 | `PASSWORD` | `admin` | dashboard login — **set this** |
-| `SESSION_SECRET` | dev value | signs the login cookie — set a long random string |
+| `SESSION_SECRET` | random, kept in the db | signs the login cookie — set a long random string |
+| `TRUST_PROXY` | loopback | which proxy may set the client IP (login lock); `false` when nothing proxies the app |
 | `DB_PATH`, `RETENTION_DAYS` | ./data/monitor.db, 7 | SQLite file, and how long checks/metrics/incidents are kept |
 | `METRICS_INTERVAL_SEC`, `CHECK_INTERVAL_SEC` | 30, 60 | sample rate and default monitor check rate |
 | `CPU_WARN_PCT`, `MEM_WARN_PCT`, `DISK_WARN_PCT`, `LOAD_WARN_FACTOR`, `WARN_STREAK` | 90/90/90/2/3 | thresholds, and how many samples in a row before alerting |

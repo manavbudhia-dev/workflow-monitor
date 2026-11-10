@@ -4,18 +4,30 @@ import { cfg } from '../config.js';
 import { setting, setSetting } from '../db.js';
 
 const NAME = 'wm_session';
+
+/**
+ * The cookie signing key. Without SESSION_SECRET in .env the old fallback was a constant string
+ * published in this repo, so anyone could mint a valid admin cookie. Now an unset secret becomes a
+ * random one, kept in the database so logins survive a restart.
+ */
+const SECRET = (() => {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  let s = setting('session_secret', '');
+  if (!s) { s = crypto.randomBytes(32).toString('hex'); setSetting('session_secret', s); }
+  return s;
+})();
 const b64 = (s) => Buffer.from(s).toString('base64url');
 const logoutAt = () => Number(setting('logout_at') || 0);
 
 const sign = (payload) => {
   const body = b64(JSON.stringify(payload));
-  return `${body}.${crypto.createHmac('sha256', cfg.sessionSecret).update(body).digest('base64url')}`;
+  return `${body}.${crypto.createHmac('sha256', SECRET).update(body).digest('base64url')}`;
 };
 
 function verify(token) {
   const [body, sig] = String(token || '').split('.');
   if (!body || !sig) return null;
-  const want = crypto.createHmac('sha256', cfg.sessionSecret).update(body).digest();
+  const want = crypto.createHmac('sha256', SECRET).update(body).digest();
   const got = Buffer.from(sig, 'base64url');
   if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
   try {
@@ -43,7 +55,7 @@ export function auth(req, res, next) {
 
 const attempts = new Map();
 const BLOCK_MS = 10 * 60000;
-const hash = (p) => crypto.scryptSync(String(p), cfg.sessionSecret, 32).toString('hex');
+const hash = (p) => crypto.scryptSync(String(p), SECRET, 32).toString('hex');
 
 export const router = express.Router();
 

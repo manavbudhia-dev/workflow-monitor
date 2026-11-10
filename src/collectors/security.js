@@ -93,12 +93,29 @@ function readLogFile(p) {
   return { text: buf.toString('utf8') };
 }
 
+/**
+ * Reads the journal from a saved cursor, so every line is seen exactly once. The old
+ * "--since <interval+5>s ago" window re-read the last 5s on every scan (double-counting
+ * failures towards the brute-force limit) and skipped lines whenever a scan ran late.
+ */
 async function readJournal(unit) {
-  const since = `${cfg.securityIntervalSec + 5}s ago`;
-  const args = (u) => ['-u', u, '--no-pager', '-o', 'short-iso', '--since', since];
-  for (const u of (unit === 'ssh' ? ['ssh', 'sshd'] : [unit])) {
+  const units = unit === 'ssh' ? ['ssh', 'sshd'] : [unit];
+  for (const u of units) {
+    const key = `sec_jcursor:${u}`;
+    const cursor = setting(key, '');
+    const args = ['-u', u, '--no-pager', '-q', '-o', 'short-iso', '--show-cursor',
+      ...(cursor ? ['--after-cursor', cursor] : ['--since', `${cfg.securityIntervalSec + 5}s ago`])];
     for (const fn of [cap, sys]) {
-      try { const out = await fn('journalctl', args(u), 12000); if (out) return { text: out, unit: u }; } catch { /* try the next way in */ }
+      let out;
+      try { out = await fn('journalctl', args, 12000); } catch { continue; /* try the next way in */ }
+      const m = /^-- cursor: (.+)$/m.exec(out || '');
+      if (m) {
+        setSetting(key, m[1].trim());
+        return { text: out.replace(/^-- cursor: .*$/m, '').trim(), unit: u };
+      }
+      if (String(out || '').trim()) continue; // no cursor but output: a permission warning — retry via sudo
+      if (cursor) return { text: '', unit: u }; // nothing new since last scan
+      break; // this unit has no entries at all: try the other unit name
     }
   }
   return { text: '' };
@@ -191,7 +208,15 @@ async function fail2ban() {
   return bans;
 }
 
-export async function scanSecurity() {
+let scanning = null;
+
+/** The interval and the "Scan now" button share one scan; two at once double-alerted ports and logins. */
+export function scanSecurity() {
+  if (!scanning) scanning = scanOnce().finally(() => { scanning = null; });
+  return scanning;
+}
+
+async function scanOnce() {
   if (!cfg.securityEnabled) return { skipped: 'SECURITY_ENABLED=false' };
   const out = { events: 0, ports: null, bans: null };
   const src = cfg.authLogSource || '/var/log/auth.log';

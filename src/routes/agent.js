@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { cfg } from '../config.js';
-import { get, run, now, localServerId } from '../db.js';
+import { get, run, now, setSetting } from '../db.js';
 import { evaluate } from '../collectors/metrics.js';
 import { edge } from '../notify.js';
 
@@ -44,10 +44,15 @@ router.all('/ping/:secret', async (req, res) => {
   const m = get('SELECT * FROM monitors WHERE secret=? AND type=?', req.params.secret, 'cron_heartbeat');
   if (!m) return res.status(404).json({ error: 'unknown ping url' });
   const failed = /^(1|true|yes)$/i.test(String(req.query.fail || ''));
-  run('UPDATE monitors SET last_check=?, last_ok=?, last_detail=? WHERE id=?',
-    now(), failed ? 0 : 1, failed ? `job reported failure via ${req.query.msg || 'ping'}${req.query.ms ? ` (${req.query.ms}ms)` : ''}` : `pinged at ${new Date().toLocaleString()}`, m.id);
+  const msg = String(req.query.msg || '').slice(0, 200);
+  const detail = failed ? `cron job reported failure: ${msg || 'no message'}` : `pinged at ${new Date().toLocaleString()}`;
+  run(`UPDATE monitors SET last_check=?, last_ok=?, last_detail=?,
+      down_since=CASE WHEN ? THEN COALESCE(down_since, ?) ELSE NULL END WHERE id=?`,
+    now(), failed ? 0 : 1, detail, failed ? 1 : 0, now(), m.id);
+  // The scheduled heartbeat check reads this, so a reported failure stays down until a good ping.
+  setSetting(`hb_fail:${m.id}`, failed ? detail : '');
   if (failed) {
-    await edge({ key: `mon:${m.id}`, ok: false, monitorId: m.id, serverId: m.server_id, kind: 'monitor', title: m.name, detail: `cron job reported failure: ${req.query.msg || 'no message'}` });
+    await edge({ key: `mon:${m.id}`, ok: false, monitorId: m.id, serverId: m.server_id, kind: 'monitor', title: m.name, detail });
     return res.json({ ok: false, pinged: true });
   }
   await edge({ key: `mon:${m.id}`, ok: true, monitorId: m.id, serverId: m.server_id, kind: 'monitor', title: m.name, detail: 'cron job pinged on time' });

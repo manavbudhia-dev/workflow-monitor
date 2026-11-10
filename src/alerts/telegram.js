@@ -64,17 +64,27 @@ export function summaryText() {
 }
 
 let bot = null;
+let starting = null;
 const enabled = () => !!cfg.telegramToken && cfg.telegramChats.length > 0;
 export const telegramInfo = () => ({ configured: enabled(), polling: !!bot, chats: cfg.telegramChats.length, owners: cfg.telegramOwners.length });
 
-async function ensure() {
-  if (bot) return bot;
-  const { Bot } = await import('node-telegram-bot-api');
-  bot = new Bot(cfg.telegramToken);
-  wire(bot);
-  bot.catch((err) => console.error('[telegram handler]', err?.message || err));
-  bot.startPolling().catch((e) => { console.error('[telegram polling]', e.message); bot = null; });
-  return bot;
+/**
+ * Several alerts can fire in the same tick. Before, each one that arrived while the import was
+ * pending built its own Bot and started its own long-poll, and Telegram answers a second poller
+ * with 409 Conflict. Every caller now waits on the one start-up.
+ */
+function ensure() {
+  if (bot) return Promise.resolve(bot);
+  starting ??= (async () => {
+    const { Bot } = await import('node-telegram-bot-api');
+    const b = new Bot(cfg.telegramToken);
+    wire(b);
+    b.catch((err) => console.error('[telegram handler]', err?.message || err));
+    b.startPolling().catch((e) => { console.error('[telegram polling]', e.message); if (bot === b) bot = null; });
+    bot = b;
+    return b;
+  })().finally(() => { starting = null; });
+  return starting;
 }
 
 async function deliver(b, chat_id, text) {
@@ -98,17 +108,30 @@ export async function send(text) {
   }
 }
 
-const isOwner = (user) => !cfg.telegramOwners.length || cfg.telegramOwners.some((id) => String(id) === String(user?.id));
+const isChat = (chat) => cfg.telegramChats.some((id) => String(id) === String(chat?.id));
+/**
+ * With TELEGRAM_OWNER_IDS empty, "owner" used to mean *anyone*, and the bot answered every chat,
+ * so any Telegram user who found the bot's name could run /status or /restart <any unit>.
+ * Now an empty owner list means "people in one of the configured TELEGRAM_CHAT_IDS".
+ */
+const isOwner = (ctx) => (cfg.telegramOwners.length
+  ? cfg.telegramOwners.some((id) => String(id) === String(ctx.from?.id))
+  : isChat(ctx.chat));
 const answer = (ctx, text) => ctx.reply(text, { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } })
   .catch(() => ctx.reply(text).catch((e) => console.error('[telegram reply]', e.message)));
 
 function wire(b) {
+  // Ignore every chat that is not configured: no answers, no info leak, no commands.
+  b.use((ctx, next) => {
+    if (isChat(ctx.chat) || (ctx.from && cfg.telegramOwners.some((id) => String(id) === String(ctx.from.id)))) return next();
+    return undefined;
+  });
   b.command('status', (ctx) => answer(ctx, statusText()));
   b.command('incidents', (ctx) => answer(ctx, incidentsText(Math.min(parseInt(ctx.match, 10) || 5, 20))));
   b.command('summary', (ctx) => answer(ctx, summaryText()));
   b.command('help', (ctx) => ctx.reply('Commands:\n/status — current state\n/incidents [n] — last incidents\n/summary — 24h digest\n/check — run all monitors now\n/restart <unit> | pm2:<app> — restart (owners only)'));
   b.command('check', async (ctx) => {
-    if (!isOwner(ctx.from)) return ctx.reply('⛔ Not an owner id.');
+    if (!isOwner(ctx)) return ctx.reply('⛔ Not an owner id.');
     const { runAll } = await import('../collectors/checks.js');
     const res = await runAll();
     return ctx.reply(`✅ Ran ${res.length} checks\n${res.map((r) => `${r.skip ? '⚪' : r.ok ? '🟢' : '🔴'} ${r.name}${r.skip ? ` (${r.skip})` : r.ok ? '' : ` — ${r.detail}`}`).join('\n') || 'no monitors configured yet'}`);
@@ -116,7 +139,7 @@ function wire(b) {
   b.command('restart', async (ctx) => {
     const svc = String(ctx.match || '').trim();
     if (!svc) return ctx.reply('Usage: /restart n8n.service  or  /restart pm2:api');
-    if (!isOwner(ctx.from)) return answer(ctx, '⛔ Not an owner id, /restart refused.');
+    if (!isOwner(ctx)) return answer(ctx, '⛔ Not an owner id, /restart refused.');
     if (process.platform !== 'linux') return answer(ctx, `⚠️ /restart only works on the Linux server (this host runs ${process.platform}).`);
     if (!/^[A-Za-z0-9@._:+-]+$/.test(svc.replace(/^pm2:/, ''))) return answer(ctx, '⛔ Service name may only contain letters, digits and @ . _ + - :');
     const { cap, sys } = await import('../shell.js');
@@ -129,6 +152,9 @@ function wire(b) {
     } catch (e) { return ctx.reply(`❌ Restart ${svc} failed: ${e.message}`); }
   });
 }
+
+/** Start polling at boot, so /status and /restart answer before the first alert has been sent. */
+export const startBot = () => { if (enabled()) ensure().catch((e) => console.error('[telegram]', e.message)); };
 
 /** Called every minute by the scheduler; sends the digest once at SUMMARY_HOUR. */
 export function maybeDailySummary() {

@@ -2,7 +2,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import { spawnSync } from 'node:child_process';
 import { cfg } from '../config.js';
-import { monitorConfig, now, monitors, addCheck, updateMonitorAfterCheck } from '../db.js';
+import { monitorConfig, now, monitors, monitor, setting, addCheck, updateMonitorAfterCheck } from '../db.js';
 import { edge } from '../notify.js';
 import { send } from '../alerts/telegram.js';
 import { getLastLogs } from '../ai/logs.js';
@@ -131,7 +131,16 @@ async function checkN8n(c) {
 async function checkHeartbeat(c, m) {
   const interval = (+c.interval_min || 60) * 60000;
   const grace = (+c.grace_min || 15) * 60000;
-  if (!m.last_check) return { ok: false, detail: `no ping received yet — waiting for first hit on /api/ping/<secret>` };
+  // A job that reported ?fail=1 stays down until it pings successfully again; its last_check is
+  // fresh, so without this the next scheduled check would call it "on time" and close the incident.
+  const failed = setting(`hb_fail:${m.id}`, '');
+  if (failed) return { ok: false, detail: failed };
+  if (!m.last_check) {
+    // A brand-new heartbeat gets one full interval + grace before it may page anyone.
+    const waited = now() - (m.created_at || now());
+    if (waited <= interval + grace) return { skip: 'waiting for the first ping' };
+    return { ok: false, detail: `no ping received in ${Math.round(waited / 60000)}m since the monitor was created` };
+  }
   const since = now() - m.last_check;
   const late = since - interval;
   const ago = Math.round(since / 60000);
@@ -144,7 +153,26 @@ export const types = {
 };
 export const monitorTypes = Object.keys(types);
 
-export async function runMonitor(m) {
+const inflight = new Map();
+
+/**
+ * One check per monitor at a time: the scheduler, "check now", /check and monitor creation can
+ * all ask for the same monitor at once. A second caller shares the running check instead of
+ * starting a parallel one (which double-counted failures and could trip auto-restart on one blip).
+ */
+export function runMonitor(m) {
+  const id = Number(m?.id);
+  if (inflight.has(id)) return inflight.get(id);
+  const p = runMonitorOnce(id).finally(() => inflight.delete(id));
+  inflight.set(id, p);
+  return p;
+}
+
+async function runMonitorOnce(id) {
+  // Always work from the current row: the caller's copy may predate an edit, a disable, a delete
+  // or a cron ping that landed while earlier monitors in the same tick were being checked.
+  const m = monitor(id);
+  if (!m) return { id, skip: 'monitor was deleted' };
   const c = monitorConfig(m);
   const fn = types[m.type];
   if (!fn) return { id: m.id, error: `unknown type ${m.type}` };

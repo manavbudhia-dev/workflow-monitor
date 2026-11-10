@@ -62,8 +62,12 @@ export const addCheck = (id, ok, ms, detail) =>
   run('INSERT INTO checks(monitor_id, ok, ms, detail, created_at) VALUES(?,?,?,?,?)', id, ok ? 1 : 0, ms, String(detail || '').slice(0, 400), now());
 
 export function updateMonitorAfterCheck(m, ok, ms, detail, touchLast = true) {
-  run('UPDATE monitors SET last_ok=?, last_ms=?, last_detail=?, down_since=?, last_check=? WHERE id=?',
-    ok ? 1 : 0, ms, String(detail || '').slice(0, 400), ok ? null : m.down_since || now(), touchLast ? now() : m.last_check, m.id);
+  // down_since and last_check are decided in SQL, not from the (possibly stale) row the caller holds:
+  // a cron ping can update last_check while a check is in flight, and must not be overwritten.
+  run(`UPDATE monitors SET last_ok=?, last_ms=?, last_detail=?,
+      down_since=CASE WHEN ? THEN NULL ELSE COALESCE(down_since, ?) END,
+      last_check=CASE WHEN ? THEN ? ELSE last_check END WHERE id=?`,
+    ok ? 1 : 0, ms, String(detail || '').slice(0, 400), ok ? 1 : 0, now(), touchLast ? 1 : 0, now(), m.id);
 }
 
 export function openIncident(m, kind, title, detail, logs = '') {
