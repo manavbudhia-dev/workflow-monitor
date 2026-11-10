@@ -67,7 +67,7 @@ export function statusOf(m) {
   if (m.ok === null || m.ok === undefined) return 'pending';
   if (m.ok === false) return 'down';
   if (m.uptime !== null && m.uptime < 100) return 'degraded';
-  if (/expir|restart|overdue/i.test(m.detail || '')) return 'degraded';
+  if (/expir|overdue/i.test(m.detail || '')) return 'degraded';
   return 'up';
 }
 export const STATUS_LABEL = { up: 'UP', down: 'DOWN', degraded: 'DEGRADED', pending: 'PENDING', paused: 'PAUSED' };
