@@ -50,6 +50,12 @@ const logRow = (m, r) => run(
 );
 
 const busy = new Set();
+/**
+ * Restarts started but not yet logged. The scheduler checks every monitor in parallel, and a restart is
+ * only written to restart_log after it ran and was re-checked (25 s + RESTART_WAIT_SEC later), so in a
+ * mass outage every failing monitor read the same "used" count and all passed the breaker at once.
+ */
+let inFlight = 0;
 
 /**
  * pm2 talks to the PM2 daemon of the user that runs it. sys() prefixes sudo, which reached root's
@@ -79,6 +85,7 @@ export async function maybeRestart(m, out, recheck) {
   if (last && now() - last.finished_at < s.cooldownMin * 6e4) return { skipped: 'cooldown' };
 
   busy.add(m.id);
+  let release = () => {};
   try {
     const attempts = get("SELECT COUNT(*) n FROM restart_log WHERE monitor_id=? AND started_at>=? AND result NOT IN ('blocked','breaker')", m.id, since).n;
     const inc = get('SELECT id, ai FROM incidents WHERE monitor_id=? AND state=? ORDER BY id DESC LIMIT 1', m.id, 'open');
@@ -93,7 +100,8 @@ export async function maybeRestart(m, out, recheck) {
 
     // Circuit breaker: something that makes many services fall over at once (disk full, OOM, a bad
     // deploy) must not turn into a restart storm. Refuse once the hourly budget is spent, tell once.
-    const used = restartsLastHour();
+    // Check and reserve with no await in between, so concurrent callers can't both take the last slot.
+    const used = restartsLastHour() + inFlight;
     if (used >= cfg.restartMaxPerHour) {
       logRow(m, { incident_id: inc?.id, command: v.cmd, attempt: attempts + 1, ok: false, result: 'breaker', output: `refused: ${used} restarts in the last hour (RESTART_MAX_PER_HOUR=${cfg.restartMaxPerHour})`, started_at: now() });
       if (cooldownOk('restart:breaker', 60)) await send(`🧯 *AUTO-RESTART PAUSED*
@@ -102,6 +110,9 @@ ${m.name} was not restarted — something bigger may be wrong (disk, memory, a b
       return { blocked: 'restart circuit breaker' };
     }
 
+    inFlight++;
+    let reserved = true;
+    release = () => { if (reserved) { reserved = false; inFlight--; } };
     const started = now();
     let code = null, text = '';
     try { text = await runRestart(v.bin, v.args, 25000); code = 0; } catch (e) {
@@ -116,6 +127,8 @@ ${m.name} was not restarted — something bigger may be wrong (disk, memory, a b
 
     const attempt = attempts + 1;
     const output = `${text ? `${text}\n` : ''}re-check: ${re.detail}`;
+    // The restart_log row written next takes over this reservation in restartsLastHour().
+    release();
     if (recovered) {
       logRow(m, { incident_id: inc?.id, command: v.cmd, attempt, ok: true, exit_code: code, result: 'recovered', output, started_at: started, finished_at: now() });
       await send(`🔁 *RESTARTED OK* ${m.name}\nRan: ${v.cmd}\nBack up after attempt ${attempt}\n${re.detail}`);
@@ -128,6 +141,7 @@ ${m.name} was not restarted — something bigger may be wrong (disk, memory, a b
     await send(`🛠 *NEEDS MANUAL FIX* ${m.name}\n${v.cmd}\nStill down after ${attempt} restart attempt${attempt === 1 ? '' : 's'}.\n${re.detail}${ai}`);
     return { recovered: false, attempt, gaveUp: true };
   } finally {
+    release(); // no-op once released; covers any throw after the reservation
     busy.delete(m.id);
   }
 }
