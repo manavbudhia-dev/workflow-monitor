@@ -123,7 +123,7 @@ async function checkN8n(c) {
   const minRate = c.min_rate !== undefined && c.min_rate !== '' ? +c.min_rate : 100;
   const ok = rate >= minRate;
   const last = bad[0] ? ` last failed #${bad[0].id} (${bad[0].mode || '?'})` : '';
-  return { ok, detail: `${rate}% success, ${bad.length}/${total} failed in last ${winMin}m (min ${minRate}%).${last}`, ms: now() - t0, extra: { rate, failed: bad.length, total, ids: bad.slice(0, 5).map((r) => r.id) } };
+  return { ok, detail: `${rate}% success, ${bad.length}/${total} failed in last ${winMin}m (min ${minRate}%).${last}`, ms: now() - t0, extra: { rate, failed: bad.length, total, ids: bad.slice(0, 5).map((r) => r.id), runs: bad.slice(0, 5).map((r) => ({ id: r.id, wf: r.workflowId })) } };
 }
 
 async function checkHeartbeat(c, m) {

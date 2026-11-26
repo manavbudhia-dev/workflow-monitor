@@ -12,6 +12,10 @@ export function build(root) {
     <div class="kvs" data-f=kv></div>
     <div class="row"><button class="btn primary sm" data-f=test>${icon('send', 14)} Send test message</button><span class="spacer"></span><span class="stamp" data-f=out></span></div>
     <div class="note">Token and chat ids are read from <span class="kv-code">TELEGRAM_BOT_TOKEN</span> / <span class="kv-code">TELEGRAM_CHAT_IDS</span> at boot; the dashboard never shows them. <span class="kv-code">TELEGRAM_OWNER_IDS</span> gates the /restart command.</div></div>`);
+  const mail = el(`<div class="dcard"><header>${icon('send', 18)}<b>Email alerts (Resend)</b><span class="badge" data-f=state></span></header>
+    <div class="kvs" data-f=kv></div>
+    <div class="row"><button class="btn primary sm" data-f=test>${icon('send', 14)} Send test email</button><span class="spacer"></span><span class="stamp" data-f=out></span></div>
+    <div class="note">Set <span class="kv-code">RESEND_API_KEY</span>, <span class="kv-code">ALERT_EMAIL_TO</span> and <span class="kv-code">ALERT_EMAIL_FROM</span> (an address on a domain verified in Resend). <span class="kv-code">ALERT_EMAIL_TYPES=n8n</span> limits email to workflow failures.</div></div>`);
   const ai = el(`<div class="dcard"><header>${icon('sparkles', 18)}<b>LLM root cause</b><span class="badge" data-f=state></span></header>
     <div class="kvs" data-f=kv></div>
     <div class="row"><button class="btn primary sm" data-f=test>${icon('zap', 14)} Run self test</button><span class="spacer"></span><span class="stamp" data-f=out></span></div>
@@ -22,7 +26,7 @@ export function build(root) {
   const ping = el(`<div class="dcard"><header>${icon('clock', 18)}<b>Cron heartbeat</b><span class="badge" data-f=state></span></header>
     <div class="kvs" data-f=kv></div><div class="kvs" data-f=list></div>
     <div class="note">Anyone holding a ping URL can mark that job healthy, so treat them like credentials and keep this page behind the login.</div></div>`);
-  grid.append(tg, ai, n8n, ping);
+  grid.append(tg, mail, ai, n8n, ping);
 
   const cardEl = el(`<div class="note">Everything here is read-only: integrations are configured in <span class="kv-code">.env</span> and applied on restart (<span class="kv-code">pm2 restart workflow-monitor</span> or <span class="kv-code">systemctl restart workflow-monitor</span>).
     Monitors, servers and incidents are managed from their own pages; this page only proves the outbound channels work.</div>`);
@@ -53,10 +57,17 @@ export function build(root) {
 
   tg.querySelector('[data-f=test]').onclick = () => test(tg, '/selftest/telegram', 'Telegram');
   ai.querySelector('[data-f=test]').onclick = () => test(ai, '/selftest/ai', 'AI');
+  mail.querySelector('[data-f=test]').onclick = () => test(mail, '/selftest/email', 'Email');
 
   function update() {
     const s = store.summary;
     const mons = s.monitors;
+    const e = s.email || {};
+    state(mail, e.configured, 'configured', 'not configured');
+    setHTML(mail.querySelector('[data-f=kv]'),
+      kv('API key', e.key ? 'loaded from .env' : 'missing') +
+      kv('Recipients', e.to ? String(e.to) : 'missing') +
+      kv('From', esc(e.from || '')));
 
     state(tg, s.telegram.configured, 'configured', 'not configured');
     setHTML(tg.querySelector('[data-f=kv]'),

@@ -24,7 +24,7 @@ export function tailFile(file, lines = LINES) {
 export function scrub(text) {
   let out = maskSecrets(text);
   const own = monitors().flatMap((m) => { const c = monitorConfig(m); return [c.api_key, c.bearer]; });
-  for (const s of [cfg.n8nKey, cfg.apiKey, cfg.telegramToken, cfg.password, cfg.sessionSecret, ...own]) {
+  for (const s of [cfg.n8nKey, cfg.apiKey, cfg.telegramToken, cfg.password, cfg.sessionSecret, cfg.resendKey, cfg.googleClientSecret, ...own]) {
     if (s && s.length > 4) out = out.split(s).join('***');
   }
   return out;

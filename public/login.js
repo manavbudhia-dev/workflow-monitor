@@ -6,8 +6,18 @@ const form = document.querySelector('#f');
 const btn = form.querySelector('button[type=submit]');
 const err = document.querySelector('#err');
 
+const fromUrl = new URLSearchParams(location.search).get('error');
+if (fromUrl) { err.textContent = fromUrl; history.replaceState(null, '', '/login.html'); }
+
+fetch('/api/auth/config').then((r) => r.json()).then((c) => {
+  document.querySelector('#google').hidden = !c.google;
+  document.querySelector('#or').hidden = !(c.google && c.password);
+  if (!c.password) { document.querySelector('#pwbox').remove(); form.onsubmit = (e) => e.preventDefault(); }
+}).catch(() => {});
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (!form.pw) return;
   err.textContent = '';
   btn.disabled = true;
   try {
