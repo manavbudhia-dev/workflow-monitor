@@ -45,7 +45,7 @@ export function build(root) {
     body: gridCard.refs.body.querySelector('[data-f=body]'),
     empty: gridCard.refs.body.querySelector('[data-f=empty]'),
   };
-  gridCard.refs.tools.querySelector('[data-f=add]').onclick = () => bus.openForm(null);
+  gridCard.refs.tools.querySelector('[data-f=add]').onclick = () => bus.openForm(null, 'n8n');
 
   function update() {
     const rows = store.n8n || [];
@@ -84,10 +84,10 @@ export function build(root) {
       setText(node.querySelector('[data-f=failed]'), c ? (c.failed ? `${c.failed} of ${c.total} runs failed` : `${c.total} runs, none failed`) : m ? m.detail || 'no executions inside the window' : 'monitor deleted');
       setText(node.querySelector('[data-f=runsn]'), `${(r.samples || []).length} samples · 24h`);
       const link = n8nLink(r.id);
-      setHTML(node.querySelector('[data-f=wf]'), `<span class="inline-flex">${icon('link', 13)}<span>${esc(r.workflow_id || 'all workflows')}</span></span>`);
+      setHTML(node.querySelector('[data-f=wf]'), `<span class="inline-flex">${icon('link', 13)}<span>${esc(r.workflow_name || r.workflow_id || 'all workflows')}</span></span>`);
       const open = node.querySelector('[data-f=open]');
       open.disabled = !link;
-      open.title = link ? 'Open in n8n' : 'Set the n8n base URL on this monitor to enable the link';
+      open.title = link ? 'Open in n8n' : 'Set the n8n address on this monitor to enable the link';
       open.onclick = () => (link ? window.open(link, '_blank', 'noopener') : bus.openForm(m));
       setHTML(node.querySelector('[data-f=foot]'), `last check <span class="v">${m && m.last_check ? ago(m.last_check) : 'pending'}</span><span class="dim">|</span>
         24h avg <span class="v">${pct(r.avg_24h, 1)}</span><span class="dim">|</span> window <span class="v">${esc(String(m?.config?.window_min ?? 60))} min</span><span class="dim">|</span>
@@ -96,7 +96,7 @@ export function build(root) {
       if ((r.samples || []).length) runsChart(`wf-${r.id}`, node.querySelector('[data-f=runs]'), r.samples, min);
     });
     refs.empty.hidden = n > 0;
-    setText(refs.empty, 'No n8n monitor yet. Add one with the n8n base URL and API key — or leave both blank and use N8N_URL / N8N_API_KEY from .env.');
+    setText(refs.empty, 'No n8n monitor yet. Click “Add n8n monitor”, paste your n8n address and an API key, then pick the workflow to watch.');
     setText(gridCard.querySelector('.panel-head h2 span'), n ? `Workflow runs · ${n} tracked` : 'Workflow runs');
   }
 

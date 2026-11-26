@@ -37,7 +37,7 @@ const say = (text, ok = false) => {
 
 /* ---------- monitor form (schema driven, same endpoints as before) ---------- */
 
-export async function showMonitorForm(existing) {
+export async function showMonitorForm(existing, presetType) {
   const schema = store.schema || (await api('/schema'));
   const servers = store.summary.servers;
   const m = existing ? { ...existing } : null;
@@ -46,8 +46,8 @@ export async function showMonitorForm(existing) {
     <div class="form-grid">
       <label class="fl">Name<input id="f-name" type="text" required placeholder="n8n nightly sync" value="${esc(m?.name || '')}"></label>
       <label class="fl">Server<select id="f-server">${servers.map((s) => `<option value="${s.id}" ${s.id === (m?.server_id || store.serverId) ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
-      <label class="fl">Type<select id="f-type">${schema.types.map((t) => `<option value="${t}" ${t === (m?.type || 'http') ? 'selected' : ''}>${t.replace('_', ' ')}</option>`).join('')}</select></label>
-      <label class="fl">Check every (sec)<input id="f-interval" type="number" min="10" step="10" placeholder="${schema.schema.http.at(-1).ph}" value=""></label>
+      <label class="fl">Type<select id="f-type">${schema.types.map((t) => `<option value="${t}" ${t === (m?.type || presetType || 'http') ? 'selected' : ''}>${t.replace('_', ' ')}</option>`).join('')}</select></label>
+      <label class="fl">Check every (sec)<input id="f-interval" type="number" min="10" step="10" placeholder="" value="${esc(cfg.interval_sec ?? '')}"></label>
     </div>
     <div class="form-grid" id="f-fields"></div>
     <label class="chk"><input type="checkbox" id="f-enabled" ${!m || m.enabled ? 'checked' : ''}> Enabled</label>
@@ -57,6 +57,7 @@ export async function showMonitorForm(existing) {
   const draw = () => {
     const t = body.querySelector('#f-type').value;
     const fields = schema.schema[t].filter((s) => s.k !== 'interval_sec');
+    body.querySelector('#f-interval').placeholder = schema.schema[t].find((s) => s.k === 'interval_sec')?.ph || '';
     const field = (s) => {
       const v = cfg[s.k];
       if (s.kind === 'checkbox') return `<label class="chk" style="align-self:end"><input data-k="${s.k}" type="checkbox" ${v ? 'checked' : ''}> ${esc(s.label)}</label>`;
@@ -68,16 +69,16 @@ export async function showMonitorForm(existing) {
       }
       return `<label class="fl">${esc(s.label)}<input data-k="${s.k}" type="text" value="${esc(v ?? '')}" placeholder="${esc(s.ph ?? '')}"></label>`;
     };
-    body.querySelector('#f-fields').innerHTML = fields.map(field).join('');
     const extra = body.querySelector('#f-extra');
     extra.innerHTML = '';
+    if (t === 'n8n') return drawN8n(body, schema, m, cfg, fields.filter((s) => s.k.startsWith('restart') || ['auto_restart', 'max_retries', 'cooldown_minutes'].includes(s.k)).map(field).join(''));
+    body.querySelector('#f-fields').innerHTML = fields.map(field).join('');
     if (t === 'cron_heartbeat' && m?.ping_url) {
       const p = el(`<div class="hint">Ping URL (keep it secret):<div class="copy-row" style="margin-top:6px"><input readonly value="${esc(m.ping_url)}"><button type="button" class="btn sm">${icon('copy', 13)} Copy</button></div>
         <p style="margin:8px 0 0">Cron: <code>curl -fsS -m 10 "${esc(m.ping_url)}" || true</code></p></div>`);
       p.querySelector('button').onclick = (e) => copy(m.ping_url, e.currentTarget);
       extra.append(p);
     }
-    if (t === 'n8n' && !cfg.url && !cfg.api_key) extra.innerHTML = '<div class="hint" style="margin-top:10px">Blank URL / key falls back to N8N_URL and N8N_API_KEY from .env.</div>';
     if (['systemd', 'pm2'].includes(t)) extra.innerHTML = '<div class="hint" style="margin-top:10px">Log source fields (journal / pm2 / file) feed the AI root-cause step when this monitor fails.</div>';
     if (t === 'backup') extra.innerHTML = '<div class="hint" style="margin-top:10px">A folder plus pattern, or a single file path. Fails when the newest match is older than max age, smaller than min size, or more than 50% smaller than the backup before it.</div>';
     if (!schema.restart?.allow?.length) extra.innerHTML = `${extra.innerHTML}<div class="hint" style="margin-top:10px">Auto-restart needs the command in RESTART_ALLOW (.env) — the list is empty, so saving it ticked will be refused.</div>`;
@@ -119,6 +120,68 @@ export async function showMonitorForm(existing) {
       body.querySelector('#f-name').focus();
     },
   });
+}
+
+/* ---------- n8n: guided setup (address → key → connect → pick workflow) ---------- */
+
+const N8N_RATES = [['100', 'any run fails'], ['90', 'more than 10% of runs fail'], ['75', 'more than 25% of runs fail'], ['50', 'more than half of runs fail']];
+
+function drawN8n(body, schema, m, cfg, restartHTML) {
+  const env = schema.n8n_defaults || {};
+  const rate = String(cfg.min_rate ?? 100);
+  const rates = N8N_RATES.some(([v]) => v === rate) ? N8N_RATES : [...N8N_RATES, [rate, `success drops below ${rate}%`]];
+  const wf = cfg.workflow_id ? `<option value="${esc(cfg.workflow_id)}" selected>${esc(cfg.workflow_name || `Workflow ${cfg.workflow_id}`)}</option>` : '';
+  const fields = body.querySelector('#f-fields');
+  fields.innerHTML = `
+    <label class="fl full"><span><b class="step">1</b> n8n address</span>
+      <input data-k="url" type="text" inputmode="url" autocomplete="off" value="${esc(cfg.url || '')}" placeholder="${esc(env.url || 'https://n8n.yourcompany.com')}">
+      <span class="hint">Open n8n in your browser and copy the address from the address bar — any n8n page works.${env.url ? ' Leave blank to use the server default.' : ''}</span></label>
+    <label class="fl full"><span><b class="step">2</b> n8n API key</span>
+      <input data-k="api_key" type="password" autocomplete="new-password" value="${esc(cfg.api_key || '')}" placeholder="${env.has_key ? 'Leave blank to use the server default' : 'Paste the key here'}">
+      <span class="hint">In n8n: <b>Settings → n8n API → Create an API key</b>, then copy it here.</span></label>
+    <div class="full n8n-connect"><button type="button" class="btn sm" data-f="connect">${icon('plug', 14)} Connect to n8n</button><span class="hint" data-f="status"></span></div>
+    <label class="fl full"><span><b class="step">3</b> Workflow to watch</span>
+      <select data-k="workflow_id" data-f="wf"><option value="">All workflows</option>${wf}</select>
+      <input data-k="workflow_name" type="hidden" value="${esc(cfg.workflow_name || '')}">
+      <span class="hint" data-f="wfhint">Connect first to choose from your workflows.</span></label>
+    <label class="fl full">Alert me when
+      <select data-k="min_rate">${rates.map(([v, l]) => `<option value="${esc(v)}" ${v === rate ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+    <details class="full adv"><summary>Advanced</summary><div class="form-grid" style="margin-top:12px">
+      <label class="fl">Look at runs from the last (min)<input data-k="window_min" type="text" value="${esc(cfg.window_min ?? '')}" placeholder="60"></label>
+      <label class="fl">Executions to scan<input data-k="limit" type="text" value="${esc(cfg.limit ?? '')}" placeholder="100"></label>
+      ${restartHTML}</div></details>`;
+
+  const q = (sel) => fields.querySelector(sel);
+  const status = (text, ok) => { const s = q('[data-f=status]'); s.textContent = text; s.style.color = ok === undefined ? '' : ok ? 'var(--green)' : 'var(--red)'; };
+  const name = body.querySelector('#f-name');
+  let autoName = !name.value.trim();
+  name.addEventListener('input', () => { autoName = !name.value.trim(); });
+
+  const sel = q('[data-f=wf]');
+  sel.onchange = () => {
+    const o = sel.selectedOptions[0];
+    q('[data-k=workflow_name]').value = sel.value ? o.dataset.name || o.textContent : '';
+    if (autoName) name.value = sel.value ? o.dataset.name || o.textContent : 'n8n — all workflows';
+  };
+
+  const connect = async () => {
+    const btn = q('[data-f=connect]');
+    btn.disabled = true;
+    status('Connecting…');
+    try {
+      const r = await api('/n8n/workflows', { method: 'POST', body: { url: q('[data-k=url]').value.trim(), api_key: q('[data-k=api_key]').value.trim(), monitor_id: m?.id } });
+      if (q('[data-k=url]').value.trim()) q('[data-k=url]').value = r.base;
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">All workflows</option>' + r.workflows.map((w) =>
+        `<option value="${esc(w.id)}" data-name="${esc(w.name)}" ${w.id === cur ? 'selected' : ''}>${esc(w.name)}${w.active ? '' : ' (inactive)'}</option>`).join('');
+      if (cur && !r.workflows.some((w) => w.id === cur)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(cur)}" selected>${esc(cfg.workflow_name || `Workflow ${cur}`)} — not found</option>`);
+      status(`Connected — ${r.workflows.length} workflow${r.workflows.length === 1 ? '' : 's'} found`, true);
+      q('[data-f=wfhint]').textContent = 'Pick one workflow, or keep “All workflows” to watch everything.';
+      sel.onchange();
+    } catch (e) { status(e.message, false); } finally { btn.disabled = false; }
+  };
+  q('[data-f=connect]').onclick = connect;
+  if (cfg.url || cfg.api_key || (env.url && env.has_key)) connect();
 }
 
 /* ---------- incident detail + AI explain ---------- */

@@ -92,7 +92,7 @@ Everything except `PASSWORD` has a working default, so an empty `.env` still run
 | `port` | host, port, timeout_ms | TCP connect only — no data sent. |
 | `systemd` | unit, expect_sub | `systemctl show` — must run on the Linux host being monitored. |
 | `pm2` | name, max_restarts | Reads `pm2 jlist`; needs the same user that owns the PM2 daemon. |
-| `n8n` | url, api_key, workflow_id, window_min, min_rate, limit | Down when the success rate over `window_min` drops below `min_rate` (default 100). |
+| `n8n` | url, api_key, workflow_id, window_min, min_rate, limit | Down when the success rate over `window_min` drops below `min_rate` (default 100). See [n8n monitor](#n8n-monitor). |
 | `cron_heartbeat` | interval_min, grace_min | Down when the ping URL has not been hit within interval + grace. |
 | `backup` | path, pattern, max_age_hours, min_size_mb, at_hour | Newest matching file must exist, be younger than `max_age_hours` (default 26), exceed `min_size_mb`, and not have lost >50% of the previous backup's size. See [Backup monitor](#backup-monitor). |
 
@@ -101,6 +101,20 @@ Per-monitor `interval_sec` overrides the check frequency for that one monitor.
 nothing set it uses the unit/app name, and falls back to the recent check history.
 Every type also carries the four auto-restart fields (`auto_restart`, `restart_command`,
 `max_retries`, `cooldown_minutes`) — see below.
+
+### n8n monitor
+
+Workflows → **Add n8n monitor**, then:
+
+1. **n8n address** — paste any n8n page address from your browser (`n8n.acme.com`,
+   `https://n8n.acme.com/workflow/12`, `…/api/v1` all work; it is cleaned up to the base address).
+2. **API key** — in n8n: *Settings → n8n API → Create an API key*.
+3. **Connect to n8n**, then pick the workflow to watch (or keep *All workflows*). The monitor name
+   fills in from the workflow.
+4. **Alert me when** — any run fails, or more than 10% / 25% / half of runs fail.
+
+Look-back window, executions to scan and auto-restart sit under *Advanced*. Leave address and key
+blank to use `N8N_URL` / `N8N_API_KEY` from `.env`.
 
 ### Cron heartbeat
 

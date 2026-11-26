@@ -111,6 +111,7 @@ router.get('/n8n', (req, res) => {
     return {
       id: m.id, name: m.name, ok: m.last_ok === null ? null : !!m.last_ok, detail: m.last_detail,
       workflow_id: JSON.parse(m.config || '{}').workflow_id || '(all workflows)',
+      workflow_name: JSON.parse(m.config || '{}').workflow_name || null,
       current: samples[0] || null, avg_24h: avg, samples: samples.slice(0, 60).reverse(),
     };
   });

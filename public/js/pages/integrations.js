@@ -18,7 +18,7 @@ export function build(root) {
     <div class="note">Configured with <span class="kv-code">AI_PROVIDER</span>, <span class="kv-code">AI_API_KEY</span>, <span class="kv-code">AI_MODEL</span> and optional <span class="kv-code">AI_BASE_URL</span>. Log text is secret-scrubbed before it leaves the box.</div></div>`);
   const n8n = el(`<div class="dcard"><header>${icon('branch', 18)}<b>n8n</b><span class="badge" data-f=state></span></header>
     <div class="kvs" data-f=kv></div><div data-f=list></div>
-    <div class="note">Blank URL or key on a monitor falls back to <span class="kv-code">N8N_URL</span> / <span class="kv-code">N8N_API_KEY</span>. Keys stay server-side.</div></div>`);
+    <div class="note">Blank address or key on a monitor falls back to <span class="kv-code">N8N_URL</span> / <span class="kv-code">N8N_API_KEY</span>. Keys stay server-side.</div></div>`);
   const ping = el(`<div class="dcard"><header>${icon('clock', 18)}<b>Cron heartbeat</b><span class="badge" data-f=state></span></header>
     <div class="kvs" data-f=kv></div><div class="kvs" data-f=list></div>
     <div class="note">Anyone holding a ping URL can mark that job healthy, so treat them like credentials and keep this page behind the login.</div></div>`);
