@@ -42,6 +42,7 @@ export async function showMonitorForm(existing, presetType) {
   const servers = store.summary.servers;
   const m = existing ? { ...existing } : null;
   const cfg = m?.config || {};
+  const saved = m?.secrets_set || [];
   const body = el(`<form id="monForm">
     <div class="form-grid">
       <label class="fl">Name<input id="f-name" type="text" required placeholder="n8n nightly sync" value="${esc(m?.name || '')}"></label>
@@ -67,11 +68,12 @@ export async function showMonitorForm(existing, presetType) {
         const off = cur && !opts.includes(cur) ? `<option value="${esc(cur)}" selected>${esc(cur)} — not in whitelist</option>` : '';
         return `<label class="fl">${esc(s.label)}<select data-k="${s.k}"><option value="">${opts.length ? '— none —' : '— RESTART_ALLOW is empty —'}</option>${off}${opts.map((o) => `<option value="${esc(o)}" ${o === cur ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
       }
+      if (s.secret) return secretField(s.k, s.label, saved.includes(s.k), s.ph);
       return `<label class="fl">${esc(s.label)}<input data-k="${s.k}" type="text" value="${esc(v ?? '')}" placeholder="${esc(s.ph ?? '')}"></label>`;
     };
     const extra = body.querySelector('#f-extra');
     extra.innerHTML = '';
-    if (t === 'n8n') return drawN8n(body, schema, m, cfg, fields.filter((s) => s.k.startsWith('restart') || ['auto_restart', 'max_retries', 'cooldown_minutes'].includes(s.k)).map(field).join(''));
+    if (t === 'n8n') return drawN8n(body, schema, m, cfg, saved, fields.filter((s) => s.k.startsWith('restart') || ['auto_restart', 'max_retries', 'cooldown_minutes'].includes(s.k)).map(field).join(''));
     body.querySelector('#f-fields').innerHTML = fields.map(field).join('');
     if (t === 'cron_heartbeat' && m?.ping_url) {
       const p = el(`<div class="hint">Ping URL (keep it secret):<div class="copy-row" style="margin-top:6px"><input readonly value="${esc(m.ping_url)}"><button type="button" class="btn sm">${icon('copy', 13)} Copy</button></div>
@@ -88,7 +90,9 @@ export async function showMonitorForm(existing, presetType) {
 
   const save = async () => {
     const config = {};
+    const clear = [];
     for (const i of body.querySelectorAll('#f-fields input, #f-fields select')) {
+      if (i.dataset.clear) { if (i.checked) clear.push(i.dataset.clear); continue; }
       if (i.type === 'checkbox') { if (i.checked) config[i.dataset.k] = 1; continue; }
       if (i.value.trim()) config[i.dataset.k] = i.value.trim();
     }
@@ -100,6 +104,7 @@ export async function showMonitorForm(existing, presetType) {
       server_id: +body.querySelector('#f-server').value,
       enabled: body.querySelector('#f-enabled').checked,
       config,
+      clear_secrets: clear,
     };
     try {
       await api(m ? `/monitors/${m.id}` : '/monitors', { method: m ? 'PUT' : 'POST', body: payload });
@@ -126,7 +131,14 @@ export async function showMonitorForm(existing, presetType) {
 
 const N8N_RATES = [['100', 'any run fails'], ['90', 'more than 10% of runs fail'], ['75', 'more than 25% of runs fail'], ['50', 'more than half of runs fail']];
 
-function drawN8n(body, schema, m, cfg, restartHTML) {
+/** Write-only input: a saved value is never sent to the browser, so blank means "keep it". */
+function secretField(k, label, isSaved, ph = '', cls = 'fl', hint = '') {
+  return `<label class="${cls}"><span>${label}</span>
+    <input data-k="${k}" type="password" autocomplete="new-password" value="" placeholder="${esc(isSaved ? 'Saved — leave blank to keep it' : ph || '')}">
+    ${hint}${isSaved ? `<span class="hint"><label class="chk" style="font-size:11.5px;font-weight:400"><input type="checkbox" data-clear="${k}"> Remove the saved value</label></span>` : ''}</label>`;
+}
+
+function drawN8n(body, schema, m, cfg, saved, restartHTML) {
   const env = schema.n8n_defaults || {};
   const rate = String(cfg.min_rate ?? 100);
   const rates = N8N_RATES.some(([v]) => v === rate) ? N8N_RATES : [...N8N_RATES, [rate, `success drops below ${rate}%`]];
@@ -136,9 +148,8 @@ function drawN8n(body, schema, m, cfg, restartHTML) {
     <label class="fl full"><span><b class="step">1</b> n8n address</span>
       <input data-k="url" type="text" inputmode="url" autocomplete="off" value="${esc(cfg.url || '')}" placeholder="${esc(env.url || 'https://n8n.yourcompany.com')}">
       <span class="hint">Open n8n in your browser and copy the address from the address bar — any n8n page works.${env.url ? ' Leave blank to use the server default.' : ''}</span></label>
-    <label class="fl full"><span><b class="step">2</b> n8n API key</span>
-      <input data-k="api_key" type="password" autocomplete="new-password" value="${esc(cfg.api_key || '')}" placeholder="${env.has_key ? 'Leave blank to use the server default' : 'Paste the key here'}">
-      <span class="hint">In n8n: <b>Settings → n8n API → Create an API key</b>, then copy it here.</span></label>
+    ${secretField('api_key', '<b class="step">2</b> n8n API key', saved.includes('api_key'), env.has_key ? 'Leave blank to use the server default' : 'Paste the key here', 'fl full',
+      '<span class="hint">In n8n: <b>Settings → n8n API → Create an API key</b>, then copy it here.</span>')}
     <div class="full n8n-connect"><button type="button" class="btn sm" data-f="connect">${icon('plug', 14)} Connect to n8n</button><span class="hint" data-f="status"></span></div>
     <label class="fl full"><span><b class="step">3</b> Workflow to watch</span>
       <select data-k="workflow_id" data-f="wf"><option value="">All workflows</option>${wf}</select>
@@ -181,7 +192,7 @@ function drawN8n(body, schema, m, cfg, restartHTML) {
     } catch (e) { status(e.message, false); } finally { btn.disabled = false; }
   };
   q('[data-f=connect]').onclick = connect;
-  if (cfg.url || cfg.api_key || (env.url && env.has_key)) connect();
+  if (cfg.url || saved.includes('api_key') || (env.url && env.has_key)) connect();
 }
 
 /* ---------- incident detail + AI explain ---------- */

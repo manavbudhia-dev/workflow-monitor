@@ -77,7 +77,7 @@ export function build(root) {
     setHTML(n8n.querySelector('[data-f=kv]'),
       kv('Monitors', String(n8ns.length)) +
       kv('Own base URL', String(n8ns.filter((m) => m.config.url).length)) +
-      kv('Own API key', String(n8ns.filter((m) => m.config.api_key).length)) +
+      kv('Own API key', String(n8ns.filter((m) => m.secrets_set?.includes('api_key')).length)) +
       kv('Env fallback', 'N8N_URL / N8N_API_KEY'));
     setHTML(n8n.querySelector('[data-f=list]'), n8ns.length ? n8ns.map((m) =>
       `<div class="kvs"><div><span>${esc(m.name)}</span><span class="mono">${esc(m.config.url || 'from .env')}</span></div></div>`).join('') : '');

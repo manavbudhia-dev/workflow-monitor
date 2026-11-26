@@ -8,6 +8,9 @@ import { newSecret, pingUrl } from './agent.js';
 import { n8nAuth, n8nBase, n8nLink, n8nWorkflowId, n8nWorkflows } from '../n8n.js';
 
 const f = (k, label, ph = '', num = false) => ({ k, label, ph, num });
+const secret = (k, label) => ({ k, label, ph: '', secret: true });
+/** Config keys that are write-only: stored and used server-side, never sent back to the browser. */
+export const SECRET_KEYS = ['api_key', 'bearer'];
 const chk = (k, label) => ({ k, label, kind: 'checkbox' });
 const sel = (k, label, opts) => ({ k, label, kind: 'select', opts });
 const interval = (ph = String(cfg.checkIntervalSec)) => ({ k: 'interval_sec', label: 'Check every (sec)', ph, num: true });
@@ -22,11 +25,11 @@ const RESTART_FIELDS = () => [
 ];
 
 export const schema = {
-  http: [f('url', 'URL *', 'https://example.com/health'), f('method', 'Method', 'GET'), f('expect_status', 'Expected statuses', '200,204'), f('keyword', 'Body must contain', 'ok'), f('bearer', 'Bearer token'), f('timeout_ms', 'Timeout ms', '10000'), f('ssl', 'TLS expiry check', '1'), interval()],
+  http: [f('url', 'URL *', 'https://example.com/health'), f('method', 'Method', 'GET'), f('expect_status', 'Expected statuses', '200,204'), f('keyword', 'Body must contain', 'ok'), secret('bearer', 'Bearer token'), f('timeout_ms', 'Timeout ms', '10000'), f('ssl', 'TLS expiry check', '1'), interval()],
   port: [f('host', 'Host', '127.0.0.1'), f('port', 'Port *', '5432'), f('timeout_ms', 'Timeout ms', '5000'), interval()],
   systemd: [f('unit', 'Unit name *', 'n8n.service'), f('expect_sub', 'Expected SubState', 'running'), ...LOG_FIELDS, interval()],
   pm2: [f('name', 'PM2 app name *', 'api'), f('max_restarts', 'Alert above restarts', ''), ...LOG_FIELDS, interval()],
-  n8n: [f('url', 'n8n address', 'https://n8n.example.com'), f('api_key', 'n8n API key'), f('workflow_id', 'Workflow (link or ID, blank = all)'), f('window_min', 'Look at runs from the last (min)', '60'), f('min_rate', 'Alert below success %', '100'), f('limit', 'Executions to scan', '100'), interval('300')],
+  n8n: [f('url', 'n8n address', 'https://n8n.example.com'), secret('api_key', 'n8n API key'), f('workflow_id', 'Workflow (link or ID, blank = all)'), f('window_min', 'Look at runs from the last (min)', '60'), f('min_rate', 'Alert below success %', '100'), f('limit', 'Executions to scan', '100'), interval('300')],
   cron_heartbeat: [f('interval_min', 'Runs every (min) *', '1440'), f('grace_min', 'Grace (min)', '30')],
   backup: [f('path', 'Folder or file path *', '/var/backups/app'), f('pattern', 'File pattern (* and ?)', 'backup-*.tar.gz'), f('max_age_hours', 'Max age (hours)', '26'), f('min_size_mb', 'Min size (MB)', '10'), f('at_hour', 'Run once at hour 0-23', ''), interval('3600')],
 };
@@ -57,9 +60,11 @@ const uptimePct = (id, hours = 24) => {
 export const decorate = (m) => {
   const c = monitorConfig(m);
   const up = uptimePct(m.id);
+  const secrets_set = SECRET_KEYS.filter((k) => c[k]);
+  for (const k of SECRET_KEYS) delete c[k];
   return {
     id: m.id, name: m.name, type: m.type, enabled: !!m.enabled, server_id: m.server_id,
-    config: c, ok: m.last_ok === null ? null : !!m.last_ok, ms: m.last_ms, detail: m.last_detail,
+    config: c, secrets_set, ok: m.last_ok === null ? null : !!m.last_ok, ms: m.last_ms, detail: m.last_detail,
     last_check: m.last_check, down_since: m.down_since, uptime: up.pct, samples: up.n,
     ping_url: m.type === 'cron_heartbeat' && m.secret ? pingUrl(m.secret) : null,
     link: m.type === 'n8n' ? n8nLink(c) : null,
@@ -123,7 +128,14 @@ router.put('/monitors/:id', (req, res) => {
   const m = monitor(req.params.id);
   if (!m) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
-  const config = b.type && b.type !== m.type ? clean(b.type, b.config) : clean(m.type, b.config ?? monitorConfig(m));
+  const sameType = !b.type || b.type === m.type;
+  const config = sameType ? clean(m.type, b.config ?? monitorConfig(m)) : clean(b.type, b.config);
+  // The browser never sees saved secrets, so a blank one on edit means "keep it" unless cleared.
+  if (sameType) {
+    const old = monitorConfig(m);
+    const drop = Array.isArray(b.clear_secrets) ? b.clear_secrets : [];
+    for (const k of SECRET_KEYS) if (config[k] === undefined && old[k] && !drop.includes(k)) config[k] = old[k];
+  }
   const missing = (required[b.type || m.type] || []).filter((k) => config[k] === undefined);
   if (missing.length) return res.status(400).json({ error: `missing required field(s): ${missing.join(', ')}` });
   const n8nBad = (b.type || m.type) === 'n8n' ? n8nProblem(config) : null;

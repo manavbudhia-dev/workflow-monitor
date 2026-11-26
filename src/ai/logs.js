@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { cfg } from '../config.js';
-import { q } from '../db.js';
+import { q, monitors, monitorConfig } from '../db.js';
 import { cap, sys } from '../shell.js';
 import { n8nAuth, n8nGet } from '../n8n.js';
 
@@ -23,7 +23,8 @@ export function tailFile(file, lines = LINES) {
 /** Never let configured secrets leak into log payloads that go off-box. */
 export function scrub(text) {
   let out = maskSecrets(text);
-  for (const s of [cfg.n8nKey, cfg.apiKey, cfg.telegramToken, cfg.password, cfg.sessionSecret]) {
+  const own = monitors().flatMap((m) => { const c = monitorConfig(m); return [c.api_key, c.bearer]; });
+  for (const s of [cfg.n8nKey, cfg.apiKey, cfg.telegramToken, cfg.password, cfg.sessionSecret, ...own]) {
     if (s && s.length > 4) out = out.split(s).join('***');
   }
   return out;
