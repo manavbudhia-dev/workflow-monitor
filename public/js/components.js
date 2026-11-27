@@ -76,7 +76,8 @@ export function updateMonitorRow(row, m, withUptime = true) {
   setText(row.querySelector('[data-f=name]'), m.name);
   const detail = m.detail || 'not checked yet';
   setText(row.querySelector('[data-f=detail]'), detail);
-  setHTML(row.querySelector('[data-f=type]'), typeBadge(m.type));
+  const cl = m.client_id ? (store.summary?.clients || []).find((c) => c.id === m.client_id) : null;
+  setHTML(row.querySelector('[data-f=type]'), typeBadge(m.type) + (cl ? ` ${badge(cl.name, 'blue plain')}` : ''));
   setHTML(row.querySelector('[data-f=status]'), statusHTML(s));
   setText(row.querySelector('[data-f=check]'), m.last_check ? ago(m.last_check) : 'pending');
   setText(row.querySelector('[data-f=ms]'), m.ok === null || !m.ms ? 'No signal' : `${m.ms} ms`);

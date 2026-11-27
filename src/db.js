@@ -30,7 +30,13 @@ CREATE TABLE IF NOT EXISTS sec_known_ip(ip TEXT PRIMARY KEY, user TEXT, first_se
 CREATE TABLE IF NOT EXISTS sec_port(proto TEXT, addr TEXT, port TEXT, first_seen INTEGER, last_seen INTEGER, state TEXT DEFAULT 'open');
 CREATE UNIQUE INDEX IF NOT EXISTS uq_port ON sec_port(proto, addr, port);
 CREATE TABLE IF NOT EXISTS push_sub(endpoint TEXT PRIMARY KEY, keys TEXT, created_at INTEGER, sent_at INTEGER, last_error TEXT);
+CREATE TABLE IF NOT EXISTS clients(id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, telegram_chats TEXT DEFAULT '', emails TEXT DEFAULT '', status_token TEXT UNIQUE, weekly_report INTEGER DEFAULT 1, created_at INTEGER);
 `);
+
+// Clients: a monitor or server can belong to one client (NULL = your own). Added to existing databases in place.
+for (const t of ['monitors', 'servers']) {
+  if (!db.prepare(`PRAGMA table_info(${t})`).all().some((c) => c.name === 'client_id')) db.exec(`ALTER TABLE ${t} ADD COLUMN client_id INTEGER`);
+}
 
 if (!db.prepare('SELECT COUNT(*) n FROM servers').get().n) {
   db.prepare('INSERT INTO servers(name, api_key, is_local, last_seen, created_at) VALUES(?,?,1,?,?)')
@@ -49,6 +55,8 @@ export const q = (sql, ...args) => db.prepare(sql).all(...args);
 export const get = (sql, ...args) => db.prepare(sql).get(...args);
 export const run = (sql, ...args) => db.prepare(sql).run(...args);
 export const servers = () => q('SELECT * FROM servers ORDER BY id');
+export const clients = () => q('SELECT * FROM clients ORDER BY name COLLATE NOCASE');
+export const client = (id) => (id ? get('SELECT * FROM clients WHERE id=?', Number(id)) : undefined);
 export const serverName = (id) => get('SELECT name FROM servers WHERE id=?', id)?.name || `server ${id}`;
 export const monitors = (onlyEnabled = false) => q(`SELECT * FROM monitors ${onlyEnabled ? 'WHERE enabled=1' : ''} ORDER BY name`);
 export const monitor = (id) => get('SELECT * FROM monitors WHERE id=?', Number(id));

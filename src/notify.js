@@ -5,6 +5,7 @@ import { pushPing } from './alerts/push.js';
 import { scrub } from './ai/logs.js';
 import { sendEmail, alertEmail } from './alerts/email.js';
 import { n8nAuth } from './n8n.js';
+import { clientAlert } from './clients.js';
 
 const lastSent = new Map();
 const states = new Map();
@@ -90,6 +91,7 @@ export async function edge({ key, ok, monitorId, serverId, kind, title, detail, 
       send(`🔴 *DOWN* ${label}\n${host}\n${detail || title}\n_${when}_`),
       mailAlert({ down: true, m, label, host, detail: detail || title, logs, when: stamp }),
     ]);
+    clientAlert({ down: true, monitorId, serverId, kind, title, detail }).catch(() => {});
     // Push is a bonus on top of Telegram, so a slow push service must never delay or fail the alert.
     if (inc) pushPing({ title: `Down: ${label}`, tag: `wm-${inc.id}`, body: scrub(String(detail || title)).slice(0, 140) }).catch(() => {});
     return { type: 'down', id: inc?.id, sent: true };
@@ -105,5 +107,6 @@ export async function edge({ key, ok, monitorId, serverId, kind, title, detail, 
     send(`🟢 *RECOVERED* ${label}\n${host}\nBack to normal${after ? ` after ${after}` : ''}\n_${when}_`),
     mailAlert({ down: false, m, label, host, detail, when: stamp, after }),
   ]);
+  clientAlert({ down: false, monitorId, serverId, kind, title, detail, after }).catch(() => {});
   return { type: 'up', id: inc?.id, sent: true };
 }

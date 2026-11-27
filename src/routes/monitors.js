@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { cfg } from '../config.js';
-import { db, q, get, run, now, servers, monitors, monitor, monitorConfig, localServerId } from '../db.js';
+import { db, q, get, run, now, servers, monitors, monitor, monitorConfig, localServerId, client } from '../db.js';
 import { monitorTypes, runMonitor, runAll } from '../collectors/checks.js';
 import { checkCommand, whitelistInfo } from '../collectors/restart.js';
 import { newSecret, pingUrl } from './agent.js';
@@ -63,7 +63,7 @@ export const decorate = (m) => {
   const secrets_set = SECRET_KEYS.filter((k) => c[k]);
   for (const k of SECRET_KEYS) delete c[k];
   return {
-    id: m.id, name: m.name, type: m.type, enabled: !!m.enabled, server_id: m.server_id,
+    id: m.id, name: m.name, type: m.type, enabled: !!m.enabled, server_id: m.server_id, client_id: m.client_id ?? null,
     config: c, secrets_set, ok: m.last_ok === null ? null : !!m.last_ok, ms: m.last_ms, detail: m.last_detail,
     last_check: m.last_check, down_since: m.down_since, uptime: up.pct, samples: up.n,
     ping_url: m.type === 'cron_heartbeat' && m.secret ? pingUrl(m.secret) : null,
@@ -117,8 +117,10 @@ router.post('/monitors', (req, res) => {
   const secret = b.type === 'cron_heartbeat' ? newSecret() : null;
   const sid = Number(b.server_id) || localServerId;
   if (!get('SELECT id FROM servers WHERE id=?', sid)) return res.status(400).json({ error: 'unknown server_id' });
-  const r = run('INSERT INTO monitors(name, type, enabled, config, secret, server_id, created_at) VALUES(?,?,?,?,?,?,?)',
-    String(b.name).trim().slice(0, 120), b.type, b.enabled === false ? 0 : 1, JSON.stringify(config), secret, sid, now());
+  const cid = b.client_id ? Number(b.client_id) : null;
+  if (cid && !client(cid)) return res.status(400).json({ error: 'unknown client' });
+  const r = run('INSERT INTO monitors(name, type, enabled, config, secret, server_id, client_id, created_at) VALUES(?,?,?,?,?,?,?,?)',
+    String(b.name).trim().slice(0, 120), b.type, b.enabled === false ? 0 : 1, JSON.stringify(config), secret, sid, cid, now());
   const m = monitor(r.lastInsertRowid);
   if (b.check !== false) runMonitor(m).catch(() => {});
   res.json(decorate(m));
@@ -142,9 +144,11 @@ router.put('/monitors/:id', (req, res) => {
   if (n8nBad) return res.status(400).json({ error: n8nBad });
   const bad = restartProblem(config);
   if (bad) return res.status(400).json({ error: `auto-restart: ${bad}` });
-  run('UPDATE monitors SET name=?, type=?, enabled=?, config=?, server_id=? WHERE id=?',
+  const cid = b.client_id === undefined ? m.client_id : (b.client_id ? Number(b.client_id) : null);
+  if (cid && !client(cid)) return res.status(400).json({ error: 'unknown client' });
+  run('UPDATE monitors SET name=?, type=?, enabled=?, config=?, server_id=?, client_id=? WHERE id=?',
     String(b.name || m.name).trim().slice(0, 120), b.type || m.type, b.enabled === undefined ? m.enabled : (b.enabled ? 1 : 0),
-    JSON.stringify(config), Number(b.server_id) || m.server_id, m.id);
+    JSON.stringify(config), Number(b.server_id) || m.server_id, cid, m.id);
   const fresh = monitor(m.id);
   if (b.clear_down || fresh.last_ok !== 0) run('UPDATE monitors SET down_since=NULL WHERE id=?', fresh.id);
   res.json(decorate(fresh));
@@ -182,7 +186,7 @@ router.get('/monitors/:id/history', (req, res) => {
   res.json(q('SELECT ok, ms, detail, created_at FROM checks WHERE monitor_id=? AND created_at>? ORDER BY id', req.params.id, now() - hours * 36e5));
 });
 
-router.get('/servers', (req, res) => res.json(q('SELECT id, name, is_local, last_seen, api_key FROM servers ORDER BY id')));
+router.get('/servers', (req, res) => res.json(q('SELECT id, name, is_local, last_seen, api_key, client_id FROM servers ORDER BY id')));
 
 router.post('/servers', (req, res) => {
   const name = String(req.body?.name || '').trim().toLowerCase().slice(0, 60);

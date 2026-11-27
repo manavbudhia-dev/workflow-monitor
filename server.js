@@ -9,6 +9,7 @@ import { router as dataRouter } from './src/routes/data.js';
 import { router as securityRouter } from './src/routes/security.js';
 import { router as logsRouter } from './src/routes/logs.js';
 import { router as pushRouter } from './src/routes/push.js';
+import { router as clientsRouter, publicRouter as statusRouter } from './src/routes/clients.js';
 import { startMetricsLoop } from './src/collectors/metrics.js';
 import { startScheduler } from './src/collectors/scheduler.js';
 import { closeAllStreams } from './src/collectors/logs.js';
@@ -31,10 +32,12 @@ app.use((req, res, next) => {
 });
 
 app.get('/healthz', (req, res) => res.json({ ok: true, uptime: Math.round(process.uptime()), open: openIncidents().length }));
+// Client status pages: public, read-only, behind a secret link. Mounted before the login check.
+app.use(statusRouter);
 app.use('/api', agentRouter);
 app.use('/api', authRouter);
 app.use('/api', auth);
-app.use('/api', monitorsRouter, dataRouter, securityRouter, logsRouter, pushRouter);
+app.use('/api', monitorsRouter, dataRouter, securityRouter, logsRouter, pushRouter, clientsRouter);
 
 const chart = path.join(here, 'node_modules/chart.js/dist/chart.umd.js');
 app.get('/vendor/chart.umd.js', (req, res) => res.sendFile(chart));
