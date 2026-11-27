@@ -60,6 +60,10 @@ Manual run: `npm install && npm start` (agent: `npm run agent`).
 | `SSL_WARN_DAYS` | 14 | warn when an HTTPS monitor's certificate expires within this |
 | `ALERT_COOLDOWN_MIN` | 30 | minimum minutes between repeats of the same alert |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, `TELEGRAM_OWNER_IDS` | empty | alerts off until both are set; owners may `/restart` |
+| `RESEND_API_KEY`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM` | empty | email alerts via Resend — see [Email alerts](#email-alerts-resend) |
+| `ALERT_EMAIL_TYPES` | empty | only email for these monitor types (e.g. `n8n`); empty = all |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAILS` | empty | Google sign-in — see [Google sign-in](#google-sign-in) |
+| `PASSWORD_LOGIN` | true | `false` = Google sign-in only |
 | `DAILY_SUMMARY`, `SUMMARY_HOUR` | true, 8 | server-local hour for the digest |
 | `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_BASE_URL` | none | `none`, `openai` (any OpenAI-compatible endpoint) or `anthropic` |
 | `N8N_URL`, `N8N_API_KEY` | empty | defaults for n8n monitors when the monitor leaves them blank |
@@ -92,7 +96,7 @@ Everything except `PASSWORD` has a working default, so an empty `.env` still run
 | `port` | host, port, timeout_ms | TCP connect only — no data sent. |
 | `systemd` | unit, expect_sub | `systemctl show` — must run on the Linux host being monitored. |
 | `pm2` | name, max_restarts | Reads `pm2 jlist`; needs the same user that owns the PM2 daemon. |
-| `n8n` | url, api_key, workflow_id, window_min, min_rate, limit | Down when the success rate over `window_min` drops below `min_rate` (default 100). |
+| `n8n` | url, api_key, workflow_id, window_min, min_rate, limit | Down when the success rate over `window_min` drops below `min_rate` (default 100). See [n8n monitor](#n8n-monitor). |
 | `cron_heartbeat` | interval_min, grace_min | Down when the ping URL has not been hit within interval + grace. |
 | `backup` | path, pattern, max_age_hours, min_size_mb, at_hour | Newest matching file must exist, be younger than `max_age_hours` (default 26), exceed `min_size_mb`, and not have lost >50% of the previous backup's size. See [Backup monitor](#backup-monitor). |
 
@@ -101,6 +105,20 @@ Per-monitor `interval_sec` overrides the check frequency for that one monitor.
 nothing set it uses the unit/app name, and falls back to the recent check history.
 Every type also carries the four auto-restart fields (`auto_restart`, `restart_command`,
 `max_retries`, `cooldown_minutes`) — see below.
+
+### n8n monitor
+
+Workflows → **Add n8n monitor**, then:
+
+1. **n8n address** — paste any n8n page address from your browser (`n8n.acme.com`,
+   `https://n8n.acme.com/workflow/12`, `…/api/v1` all work; it is cleaned up to the base address).
+2. **API key** — in n8n: *Settings → n8n API → Create an API key*.
+3. **Connect to n8n**, then pick the workflow to watch (or keep *All workflows*). The monitor name
+   fills in from the workflow.
+4. **Alert me when** — any run fails, or more than 10% / 25% / half of runs fail.
+
+Look-back window, executions to scan and auto-restart sit under *Advanced*. Leave address and key
+blank to use `N8N_URL` / `N8N_API_KEY` from `.env`.
 
 ### Cron heartbeat
 
@@ -375,6 +393,46 @@ Useful once both are set: **Integrations → Send test message**.
 `/restart` only runs for ids in `TELEGRAM_OWNER_IDS` (empty = everyone in `TELEGRAM_CHAT_IDS`), and only
 for a command that is already in `RESTART_ALLOW` (`/restart n8n` → `systemctl restart n8n`). The bot ignores
 every chat that is not configured. Restarting another user's PM2 app is not possible.
+
+## Email alerts (Resend)
+
+Every DOWN and RECOVERED alert is also emailed. For an n8n monitor the email names the workflow
+and has buttons that open the failed runs in n8n.
+
+1. Create an API key at resend.com → *API Keys*.
+2. Verify your domain at resend.com → *Domains* (until then Resend only delivers to your own
+   Resend account's address, from `onboarding@resend.dev`).
+3. In `.env`:
+   ```
+   RESEND_API_KEY=re_...
+   ALERT_EMAIL_TO=you@example.com
+   ALERT_EMAIL_FROM=Pulse Monitor <alerts@yourdomain.com>
+   ALERT_EMAIL_TYPES=n8n        # optional: only workflow failures
+   ```
+4. Restart, then Integrations → *Send test email*.
+
+Emails follow `ALERT_COOLDOWN_MIN` like Telegram, and log excerpts are secret-scrubbed first.
+
+## Google sign-in
+
+1. Google Cloud console → *APIs & Services → OAuth consent screen*: set it up (External is fine,
+   add yourself as a test user while it is in testing).
+2. *Credentials → Create credentials → OAuth client ID*, type **Web application**.
+   Authorized redirect URI: `<PUBLIC_URL>/api/auth/google/callback`
+   (e.g. `https://monitor.example.com/api/auth/google/callback`).
+3. In `.env`:
+   ```
+   PUBLIC_URL=https://monitor.example.com
+   GOOGLE_CLIENT_ID=....apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   ALLOWED_EMAILS=you@gmail.com,@yourcompany.com
+   PASSWORD_LOGIN=false         # optional: Google only
+   ```
+4. Restart. The login page shows *Sign in with Google*.
+
+`ALLOWED_EMAILS` is required — without it Google sign-in stays off, so a random Google account
+can never get in. Refused sign-ins appear on the Security page. Google requires HTTPS for the
+redirect URI unless it is `localhost`.
 
 ## Security notes
 

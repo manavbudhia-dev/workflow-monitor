@@ -9,6 +9,7 @@ import { getLastLogs } from '../ai/logs.js';
 import { explainAndSave } from '../ai/explain.js';
 import { maybeRestart } from './restart.js';
 import { checkBackup } from './backup.js';
+import { n8nAuth, n8nGet, n8nWorkflowId } from '../n8n.js';
 
 const isLinux = process.platform === 'linux';
 const truthy = (v, d = true) => (v === undefined || v === '' ? d : /^(1|true|yes|on)$/i.test(String(v)));
@@ -105,15 +106,12 @@ async function checkPm2(c) {
 }
 
 async function checkN8n(c) {
-  const base = String(c.url || cfg.n8nUrl || '').replace(/\/+$/, '');
-  const key = c.api_key || cfg.n8nKey;
-  if (!base || !key) return { ok: false, detail: 'n8n url / API key not set (config or N8N_URL + N8N_API_KEY)' };
+  const { base, key } = n8nAuth(c);
   const t0 = now();
   const winMin = +c.window_min || 60;
   const limit = Math.min(+c.limit || 100, 100);
-  const u = `${base}/executions?limit=${limit}` + (c.workflow_id ? `&workflowId=${encodeURIComponent(c.workflow_id)}` : '');
-  const data = await fetch(u, { headers: { 'x-n8n-api-key': key }, signal: AbortSignal.timeout(+c.timeout_ms || 15000) })
-    .then((r) => { if (!r.ok) throw new Error(`n8n API ${r.status} ${r.statusText}`); return r.json(); });
+  const wf = n8nWorkflowId(c.workflow_id);
+  const data = await n8nGet(base, key, `/executions?limit=${limit}` + (wf ? `&workflowId=${encodeURIComponent(wf)}` : ''), +c.timeout_ms || 15000);
   const rows = data.data || data.executions || [];
   const cutoff = now() - winMin * 60000;
   const st = (r) => String(r.status || (r.finished ? 'success' : r.stoppedAt ? 'error' : 'running'));
@@ -125,7 +123,7 @@ async function checkN8n(c) {
   const minRate = c.min_rate !== undefined && c.min_rate !== '' ? +c.min_rate : 100;
   const ok = rate >= minRate;
   const last = bad[0] ? ` last failed #${bad[0].id} (${bad[0].mode || '?'})` : '';
-  return { ok, detail: `${rate}% success, ${bad.length}/${total} failed in last ${winMin}m (min ${minRate}%).${last}`, ms: now() - t0, extra: { rate, failed: bad.length, total, ids: bad.slice(0, 5).map((r) => r.id) } };
+  return { ok, detail: `${rate}% success, ${bad.length}/${total} failed in last ${winMin}m (min ${minRate}%).${last}`, ms: now() - t0, extra: { rate, failed: bad.length, total, ids: bad.slice(0, 5).map((r) => r.id), runs: bad.slice(0, 5).map((r) => ({ id: r.id, wf: r.workflowId })) } };
 }
 
 async function checkHeartbeat(c, m) {

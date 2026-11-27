@@ -79,9 +79,4 @@ export function incidentMenu(i) {
   ];
 }
 
-export const n8nLink = (monitorId) => {
-  const m = (store.summary?.monitors || []).find((x) => x.id === monitorId);
-  const url = (m?.config?.url || '').replace(/\/+$/, '');
-  if (!url) return null;
-  return m.config.workflow_id ? `${url}/workflow/${encodeURIComponent(m.config.workflow_id)}` : url;
-};
+export const n8nLink = (monitorId) => (store.summary?.monitors || []).find((x) => x.id === monitorId)?.link || null;

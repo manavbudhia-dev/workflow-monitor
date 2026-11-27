@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { cfg } from '../config.js';
-import { q } from '../db.js';
+import { q, monitors, monitorConfig } from '../db.js';
 import { cap, sys } from '../shell.js';
+import { n8nAuth, n8nGet } from '../n8n.js';
 
 const LINES = 50;
 const isLinux = process.platform === 'linux';
@@ -22,7 +23,8 @@ export function tailFile(file, lines = LINES) {
 /** Never let configured secrets leak into log payloads that go off-box. */
 export function scrub(text) {
   let out = maskSecrets(text);
-  for (const s of [cfg.n8nKey, cfg.apiKey, cfg.telegramToken, cfg.password, cfg.sessionSecret]) {
+  const own = monitors().flatMap((m) => { const c = monitorConfig(m); return [c.api_key, c.bearer]; });
+  for (const s of [cfg.n8nKey, cfg.apiKey, cfg.telegramToken, cfg.password, cfg.sessionSecret, cfg.resendKey, cfg.googleClientSecret, ...own]) {
     if (s && s.length > 4) out = out.split(s).join('***');
   }
   return out;
@@ -66,15 +68,14 @@ export async function getLastLogs(m, c = {}) {
     if (m.type === 'systemd' && c.unit && isLinux) return scrub(await sys('journalctl', ['-n', String(LINES), '--no-pager', '-u', c.unit]));
     if (m.type === 'pm2' && c.name) return await getLastLogs(m, { log: { kind: 'pm2', name: c.name } });
     if (m.type === 'n8n') {
-      const base = String(c.url || cfg.n8nUrl || '').replace(/\/+$/, ''), key = c.api_key || cfg.n8nKey;
+      const { base, key } = n8nAuth(c);
       let ids = [];
       try { ids = JSON.parse(q('SELECT detail FROM checks WHERE monitor_id=? ORDER BY id DESC LIMIT 1', m.id)[0]?.detail || '{}').ids || []; } catch { ids = []; }
       ids = ids.slice(0, 2);
       if (base && key && ids.length) {
         const parts = [];
         for (const id of ids) {
-          const j = await fetch(`${base}/executions/${id}`, { headers: { 'x-n8n-api-key': key }, signal: AbortSignal.timeout(12000) })
-            .then((r) => r.json()).catch(() => null);
+          const j = await n8nGet(base, key, `/executions/${encodeURIComponent(id)}?includeData=true`, 12000).catch(() => null);
           if (j?.data ?? j) parts.push(JSON.stringify((j?.data ?? j)?.data ?? j, null, 1).slice(0, 4000));
         }
         if (parts.length) return scrub(`${history(m)}\n\nFailed execution payloads:\n${parts.join('\n---\n')}`);

@@ -106,6 +106,18 @@ export const cfg = {
   logIdleMin: Math.max(num('LOG_IDLE_MIN', 10), 1),
   logPollMs: Math.max(num('LOG_POLL_MS', 1000), 250),
 
+  resendKey: process.env.RESEND_API_KEY || '',
+  resendBaseUrl: (process.env.RESEND_BASE_URL || 'https://api.resend.com').replace(/\/+$/, ''),
+  emailFrom: process.env.ALERT_EMAIL_FROM || 'Pulse Monitor <onboarding@resend.dev>',
+  emailTo: list('ALERT_EMAIL_TO'),
+  emailTypes: list('ALERT_EMAIL_TYPES').map((s) => s.toLowerCase()),
+
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  allowedEmails: list('ALLOWED_EMAILS').map((s) => s.toLowerCase()),
+  passwordLogin: bool('PASSWORD_LOGIN', true),
+  googleTokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
+
   pushPublic: process.env.VAPID_PUBLIC_KEY || '',
   pushPrivate: process.env.VAPID_PRIVATE_KEY || '',
   pushSubject: process.env.VAPID_SUBJECT || 'mailto@admin.local',

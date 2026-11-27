@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cfg } from './src/config.js';
-import { router as authRouter, auth, weakPassword } from './src/routes/auth.js';
+import { router as authRouter, auth, weakPassword, googleEnabled } from './src/routes/auth.js';
 import { router as agentRouter } from './src/routes/agent.js';
 import { router as monitorsRouter } from './src/routes/monitors.js';
 import { router as dataRouter } from './src/routes/data.js';
@@ -63,7 +63,9 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { closeAllStreams
 app.listen(cfg.port, cfg.bind, () => {
   const local = get('SELECT * FROM servers WHERE is_local=1');
   console.log(`workflow-monitor listening on http://${cfg.bind === '0.0.0.0' ? 'localhost' : cfg.bind}:${cfg.port}  (public: ${cfg.publicUrl})`);
-  console.log(`  login password: ${weakPassword() ? 'WEAK/DEFAULT — remote logins disabled until PASSWORD in .env is 8+ chars and not a default' : 'set from .env'}`);
+  console.log(`  login password: ${!cfg.passwordLogin ? 'off (PASSWORD_LOGIN=false)' : weakPassword() ? 'WEAK/DEFAULT — remote logins disabled until PASSWORD in .env is 8+ chars and not a default' : 'set from .env'}`);
+  console.log(`  google sign-in: ${googleEnabled() ? `on for ${cfg.allowedEmails.join(', ')} (redirect ${cfg.publicUrl}/api/auth/google/callback)` : cfg.googleClientId ? 'off — set GOOGLE_CLIENT_SECRET and ALLOWED_EMAILS' : 'off'}`);
+  console.log(`  email alerts: ${cfg.resendKey && cfg.emailTo.length ? `Resend → ${cfg.emailTo.join(', ')}${cfg.emailTypes.length ? ` (${cfg.emailTypes.join(', ')} only)` : ''}` : 'off'}`);
   console.log(`  metrics every ${cfg.metricsIntervalSec}s, checks every ${cfg.checkIntervalSec}s, db ${cfg.dbPath}`);
   console.log(`  servers: ${servers().length}, telegram: ${cfg.telegramToken ? 'configured' : 'off'}, ai: ${cfg.aiProvider}${cfg.apiKey ? '' : ' (no key)'}`);
   if (local) console.log(`  local agent id ${local.id}`);

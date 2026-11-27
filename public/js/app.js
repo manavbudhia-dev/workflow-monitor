@@ -116,7 +116,7 @@ async function tick(showErrors = true) {
 }
 
 bus.refresh = () => tick();
-bus.openForm = (m) => showMonitorForm(m);
+bus.openForm = (m, type) => showMonitorForm(m, type);
 bus.openIncident = (id) => showIncident(id);
 store.afterSave = async () => { await tick(); };
 

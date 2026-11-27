@@ -91,8 +91,88 @@ const cookie = (req, value, maxAge) =>
 
 export const router = express.Router();
 
+const startSession = (req, res, user) => {
+  const token = sign({ u: user, iat: Date.now(), exp: Date.now() + cfg.sessionHours * 36e5 });
+  res.setHeader('set-cookie', cookie(req, token, cfg.sessionHours * 3600));
+};
+
+/* ---------- Google sign-in (OpenID Connect, authorization-code flow) ---------- */
+
+export const googleEnabled = () => !!(cfg.googleClientId && cfg.googleClientSecret && cfg.allowedEmails.length);
+const STATE = 'wm_oauth';
+const redirectUri = () => `${cfg.publicUrl}/api/auth/google/callback`;
+
+/** ALLOWED_EMAILS holds addresses (you@gmail.com) and/or whole domains (@acme.com). */
+const allowed = (email) => {
+  const e = String(email || '').toLowerCase();
+  return cfg.allowedEmails.some((a) => (a.startsWith('@') ? e.endsWith(a) : e === a));
+};
+
+/** Public: tells the login page which buttons to show. Reveals nothing secret. */
+router.get('/auth/config', (req, res) => res.json({ google: googleEnabled(), password: cfg.passwordLogin }));
+
+router.get('/auth/google', (req, res) => {
+  if (!googleEnabled()) return res.redirect('/login.html?error=' + encodeURIComponent('Google sign-in is not configured.'));
+  const state = crypto.randomBytes(24).toString('base64url');
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  // Lax, not Strict: the browser must send it back on the top-level redirect from Google.
+  res.setHeader('set-cookie', `${STATE}=${state}.${verifier}; HttpOnly; SameSite=Lax; Path=/api/auth/google; Max-Age=600${req.secure ? '; Secure' : ''}`);
+  const q = new URLSearchParams({
+    client_id: cfg.googleClientId, redirect_uri: redirectUri(), response_type: 'code', scope: 'openid email',
+    state, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account',
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${q}`);
+});
+
+router.get('/auth/google/callback', async (req, res) => {
+  const fail = (msg) => res.redirect('/login.html?error=' + encodeURIComponent(msg));
+  const clear = `${STATE}=; HttpOnly; SameSite=Lax; Path=/api/auth/google; Max-Age=0${req.secure ? '; Secure' : ''}`;
+  res.setHeader('set-cookie', clear);
+  if (!googleEnabled()) return fail('Google sign-in is not configured.');
+  if (req.query.error) return fail(req.query.error === 'access_denied' ? 'Google sign-in was cancelled.' : `Google: ${req.query.error}`);
+  const [state, verifier] = String(parseCookies(req)[STATE] || '').split('.');
+  const got = Buffer.from(String(req.query.state || ''));
+  if (!state || !verifier || got.length !== state.length || !crypto.timingSafeEqual(got, Buffer.from(state))) return fail('Sign-in expired or was started in another tab. Try again.');
+
+  let tok;
+  try {
+    const r = await fetch(cfg.googleTokenUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ code: String(req.query.code || ''), client_id: cfg.googleClientId, client_secret: cfg.googleClientSecret, redirect_uri: redirectUri(), grant_type: 'authorization_code', code_verifier: verifier }),
+      signal: AbortSignal.timeout(15000),
+    });
+    tok = await r.json();
+    if (!r.ok) throw new Error(tok.error_description || tok.error || `HTTP ${r.status}`);
+  } catch (e) {
+    console.warn('[auth] google token exchange failed:', e.message);
+    return fail(`Google sign-in failed (${e.message}).`);
+  }
+  // The ID token came straight from Google's token endpoint over TLS, so its claims can be read
+  // without a signature check (OpenID Connect Core 3.1.3.7) — but audience, issuer and expiry still are.
+  let claims = {};
+  try { claims = JSON.parse(Buffer.from(String(tok.id_token).split('.')[1], 'base64url').toString()); } catch { /* checked below */ }
+  const ip = req.ip || 'unknown';
+  if (claims.aud !== cfg.googleClientId || !['accounts.google.com', 'https://accounts.google.com'].includes(claims.iss) || !(claims.exp * 1000 > Date.now())) {
+    return fail('Google returned an invalid sign-in token.');
+  }
+  if (!claims.email || claims.email_verified !== true) return fail('Your Google account email is not verified.');
+  if (!allowed(claims.email)) {
+    console.warn(`[auth] google sign-in refused for ${claims.email} from ${ip}`);
+    record('web_denied', ip, `Google sign-in refused for ${claims.email} (not in ALLOWED_EMAILS)`);
+    return fail(`${claims.email} is not allowed to sign in. Ask the admin to add it to ALLOWED_EMAILS.`);
+  }
+  record('web_login', ip, `dashboard login (Google: ${claims.email})`);
+  startSession(req, res, String(claims.email).toLowerCase());
+  res.append('set-cookie', clear);
+  // A same-site hop to "/" so the SameSite=Strict session cookie is sent on the next page load.
+  res.type('html').send('<!doctype html><meta http-equiv="refresh" content="0;url=/"><title>Signing in…</title>');
+});
+
 router.post('/login', async (req, res) => {
   if (!sameOrigin(req)) return res.status(403).json({ error: 'cross-site request refused' });
+  if (!cfg.passwordLogin) return res.status(403).json({ error: 'Password sign-in is turned off. Use Sign in with Google.' });
   const ip = req.ip || 'unknown';
   const t = Date.now();
   if (t - globalWindow.t > 60000) globalWindow = { t, n: 0 };
@@ -123,8 +203,7 @@ router.post('/login', async (req, res) => {
   }
   attempts.delete(ip);
   record('web_login', ip, 'dashboard login');
-  const token = sign({ u: 'admin', iat: Date.now(), exp: Date.now() + cfg.sessionHours * 36e5 });
-  res.setHeader('set-cookie', cookie(req, token, cfg.sessionHours * 3600));
+  startSession(req, res, 'admin');
   res.json({ ok: true });
 });
 

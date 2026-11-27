@@ -4,6 +4,7 @@ import { q, get, run, now, monitors, incident, localServerId } from '../db.js';
 import { decorate } from './monitors.js';
 import { explainIncident, explain, aiReady } from '../ai/explain.js';
 import { telegramInfo, send } from '../alerts/telegram.js';
+import { emailInfo, sendEmail, alertEmail } from '../alerts/email.js';
 import { backupRows } from '../collectors/backup.js';
 import { restartsFor, recentRestarts, whitelistInfo } from '../collectors/restart.js';
 
@@ -31,6 +32,7 @@ router.get('/summary', (req, res) => {
       open_incidents: q('SELECT COUNT(*) n FROM incidents WHERE state=?', 'open')[0].n,
     },
     telegram: telegramInfo(),
+    email: emailInfo(),
     ai: { provider: cfg.aiProvider, ready: aiReady() },
     thresholds: { cpu: cfg.cpuWarnPct, mem: cfg.memWarnPct, disk: cfg.diskWarnPct, ssl_days: cfg.sslWarnDays },
     intervals: { metrics: cfg.metricsIntervalSec, checks: cfg.checkIntervalSec },
@@ -111,6 +113,7 @@ router.get('/n8n', (req, res) => {
     return {
       id: m.id, name: m.name, ok: m.last_ok === null ? null : !!m.last_ok, detail: m.last_detail,
       workflow_id: JSON.parse(m.config || '{}').workflow_id || '(all workflows)',
+      workflow_name: JSON.parse(m.config || '{}').workflow_name || null,
       current: samples[0] || null, avg_24h: avg, samples: samples.slice(0, 60).reverse(),
     };
   });
@@ -120,6 +123,12 @@ router.get('/n8n', (req, res) => {
 router.post('/selftest/telegram', async (req, res) => {
   const ok = await send(`✅ workflow-monitor self test from ${cfg.publicUrl}`);
   res.json({ sent: ok, ...telegramInfo(), note: ok ? 'Check the chat ids in TELEGRAM_CHAT_IDS.' : 'Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_IDS in .env and restart.' });
+});
+
+router.post('/selftest/email', async (req, res) => {
+  const mail = alertEmail({ down: false, title: 'Test email from Pulse Monitor', rows: [['Dashboard', cfg.publicUrl], ['Sent to', cfg.emailTo.join(', ')]], links: [['Open dashboard', cfg.publicUrl]] });
+  const r = await sendEmail({ subject: '✅ Pulse Monitor test email', ...mail });
+  res.json({ ...r, ...emailInfo(), note: r.sent ? `Delivered to Resend for ${cfg.emailTo.join(', ')}` : r.error });
 });
 
 router.post('/selftest/ai', async (req, res) => {
