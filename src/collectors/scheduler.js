@@ -4,6 +4,7 @@ import { edge } from '../notify.js';
 import { runMonitor } from './checks.js';
 import { scanSecurity } from './security.js';
 import { maybeDailySummary, startBot } from '../alerts/telegram.js';
+import { maybeWeeklyReports } from '../clients.js';
 
 const lastEval = new Map();
 
@@ -63,7 +64,7 @@ export function startScheduler() {
   // runMonitor joins a check already in flight), and one long restart must not stall the rest.
   const a = setInterval(() => tickChecks().catch((e) => console.error('[checks]', e.message)), fast);
   const b = every(60e3, 'agents', checkAgents);
-  const c = setInterval(() => maybeDailySummary(), 60e3);
+  const c = setInterval(() => { maybeDailySummary(); maybeWeeklyReports(); }, 60e3);
   const d = cfg.securityEnabled ? every(Math.max(cfg.securityIntervalSec, 15) * 1000, 'security', scanSecurity) : null;
   [a, b, c, d].forEach((h) => h && h.unref());
   startBot();

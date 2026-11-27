@@ -49,6 +49,7 @@ export async function showMonitorForm(existing, presetType) {
       <label class="fl">Server<select id="f-server">${servers.map((s) => `<option value="${s.id}" ${s.id === (m?.server_id || store.serverId) ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
       <label class="fl">Type<select id="f-type">${schema.types.map((t) => `<option value="${t}" ${t === (m?.type || presetType || 'http') ? 'selected' : ''}>${t.replace('_', ' ')}</option>`).join('')}</select></label>
       <label class="fl">Check every (sec)<input id="f-interval" type="number" min="10" step="10" placeholder="" value="${esc(cfg.interval_sec ?? '')}"></label>
+      <label class="fl">Client<select id="f-client"><option value="">— mine (no client) —</option>${(store.summary.clients || []).map((c) => `<option value="${c.id}" ${c.id === m?.client_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
     </div>
     <div class="form-grid" id="f-fields"></div>
     <label class="chk"><input type="checkbox" id="f-enabled" ${!m || m.enabled ? 'checked' : ''}> Enabled</label>
@@ -102,6 +103,7 @@ export async function showMonitorForm(existing, presetType) {
       name: body.querySelector('#f-name').value.trim(),
       type: body.querySelector('#f-type').value,
       server_id: +body.querySelector('#f-server').value,
+      client_id: +body.querySelector('#f-client').value || null,
       enabled: body.querySelector('#f-enabled').checked,
       config,
       clear_secrets: clear,

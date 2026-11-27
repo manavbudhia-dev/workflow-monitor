@@ -108,6 +108,20 @@ export async function send(text) {
   }
 }
 
+/** Send to chats that are not the operator's own (a client's group). Needs only the bot token. */
+export async function sendTo(chatIds, text) {
+  const ids = (chatIds || []).map(String).filter(Boolean);
+  if (!cfg.telegramToken || !ids.length) return false;
+  try {
+    const b = await ensure();
+    for (const id of ids) await deliver(b, id, text);
+    return true;
+  } catch (e) {
+    console.error('[telegram client]', e.message);
+    return false;
+  }
+}
+
 const isChat = (chat) => cfg.telegramChats.some((id) => String(id) === String(chat?.id));
 /**
  * With TELEGRAM_OWNER_IDS empty, "owner" used to mean *anyone*, and the bot answered every chat,

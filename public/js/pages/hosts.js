@@ -79,6 +79,21 @@ export function build(root) {
     update();
   }
 
+  async function assign(s) {
+    const list = store.summary.clients || [];
+    if (!list.length) { toast('Add a client first (Clients page)', 'err'); return; }
+    const names = list.map((c, i) => `${i + 1}. ${c.name}`).join('\n');
+    const pick = prompt(`Assign ${s.name} to which client? Enter the number, or 0 for none:\n${names}`, '');
+    if (pick === null) return;
+    const n = parseInt(pick, 10);
+    if (Number.isNaN(n) || n < 0 || n > list.length) { toast('Enter one of the numbers', 'err'); return; }
+    try {
+      await api(`/servers/${s.id}/client`, { method: 'PUT', body: { client_id: n ? list[n - 1].id : null } });
+      toast(n ? `${s.name} now belongs to ${list[n - 1].name}` : `${s.name} is yours again`);
+      bus.refresh();
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
   async function remove(s) {
     if (!confirm(`Remove ${s.name} and its metric history?`)) return;
     try {
@@ -102,7 +117,7 @@ export function build(root) {
       setText(node.querySelector('[data-f=name]'), m.name);
       setHTML(node.querySelector('[data-f=badge]'), m.is_local
         ? '<span class="badge plain">this hub</span>'
-        : `<span class="badge">${m.last_seen ? `agent · ${ago(m.last_seen)}` : 'agent · waiting'}</span>`);
+        : `<span class="badge">${m.last_seen ? `agent · ${ago(m.last_seen)}` : 'agent · waiting'}</span>${m.client_id ? ` <span class="badge blue">${esc((store.summary.clients || []).find((c) => c.id === m.client_id)?.name || 'client')}</span>` : ''}`);
 
       const meters = node.querySelector('[data-f=meters]');
       if (meters.children.length !== 3) meters.replaceChildren(meterRow('CPU'), meterRow('Memory'), meterRow('Disk'));
@@ -129,6 +144,7 @@ export function build(root) {
       node.querySelector('[data-f=setup]').onclick = () => (keys.has(m.id) ? showSetup(keys.get(m.id)) : toast('The hub needs no agent key', 'err'));
       node.querySelector('[data-f=menu]').onclick = (e) => openMenu(e.currentTarget, [
         { label: 'Show charts for this host', icon: 'chart', fn: () => pick(m) },
+        ...(m.is_local ? [] : [{ label: m.client_id ? 'Change client' : 'Assign to client', icon: 'layers', fn: () => assign(m) }]),
         ...(m.is_local ? [] : [{ label: 'Remove agent', icon: 'trash', danger: true, fn: () => remove(m) }]),
       ]);
     });

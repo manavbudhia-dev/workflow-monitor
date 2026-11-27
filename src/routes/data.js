@@ -1,6 +1,6 @@
 import express from 'express';
 import { cfg } from '../config.js';
-import { q, get, run, now, monitors, incident, localServerId } from '../db.js';
+import { q, get, run, now, monitors, incident, localServerId, clients } from '../db.js';
 import { decorate } from './monitors.js';
 import { explainIncident, explain, aiReady } from '../ai/explain.js';
 import { telegramInfo, send } from '../alerts/telegram.js';
@@ -12,7 +12,7 @@ export const router = express.Router();
 const clampHours = (v) => Math.min(Math.max(+v || 24, 1), 168);
 
 router.get('/summary', (req, res) => {
-  const srv = q(`SELECT s.id, s.name, s.is_local, s.last_seen, m.cpu, m.mem, m.disk, m.load, m.uptime,
+  const srv = q(`SELECT s.id, s.name, s.is_local, s.last_seen, s.client_id, m.cpu, m.mem, m.disk, m.load, m.uptime,
       m.net_in, m.net_out, m.created_at AS metric_at
     FROM servers s
     LEFT JOIN metrics m ON m.id = (SELECT id FROM metrics WHERE server_id = s.id ORDER BY id DESC LIMIT 1)
@@ -23,6 +23,7 @@ router.get('/summary', (req, res) => {
     now: now(), host: process.platform, public_url: cfg.publicUrl,
     servers: srv.map((s) => ({ ...s, stale: !s.last_seen || now() - s.last_seen > Math.max(cfg.metricsIntervalSec * 4, 120) * 1000 })),
     monitors: ms,
+    clients: clients().map((c) => ({ id: c.id, name: c.name })),
     counts: {
       enabled: on.length,
       down: on.filter((m) => m.ok === false).length,

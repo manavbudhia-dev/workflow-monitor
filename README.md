@@ -146,6 +146,29 @@ HUB_URL=https://your-monitor:4180 HUB_KEY=<key> SERVER_NAME=db-box node agent.js
 `GET /api/agent/hello` with `x-agent-key` confirms the key without writing a metric. An agent that
 goes quiet for more than 4 sample intervals alerts as a failure itself.
 
+## Clients
+
+Monitor workflows and servers for clients from the same hub. Dashboard → **Clients** → *Add client* (name, their
+Telegram group chat id and/or emails), then:
+
+- **Monitors:** Edit monitor → *Client*. For a client's own n8n, add an `n8n` monitor with their address and an API key
+  from their n8n; for n8n Cloud the same works (server metrics are not available there).
+- **Servers:** install the agent on the client's VPS (Hosts → *Add agent*), then Hosts → ⋯ → *Assign to client*. Every
+  monitor on that server without its own client counts as theirs.
+
+What the client gets:
+
+- **Alerts** for their own monitors and agents in their Telegram group / inbox, worded for them (no logs, AI notes,
+  host details, restarts or security events). You keep getting every alert as before.
+- **Status page** at `PUBLIC_URL/status/<secret>`: current state, 24h/7d uptime, n8n run success over 7 days, last
+  7 days of incidents. No login; the link is the credential (*New status link* revokes it). Not indexed by search engines.
+- **Weekly report** on `WEEKLY_REPORT_DAY` at `SUMMARY_HOUR`: uptime, run success, incidents. Preview or send it now from
+  the client's ⋯ menu.
+
+Telegram alerts to a client need `TELEGRAM_BOT_TOKEN` and the bot added to their group (find the group's chat id with
+`https://api.telegram.org/bot<token>/getUpdates`). Email needs `RESEND_API_KEY` and a verified `ALERT_EMAIL_FROM`.
+`BRAND_NAME` is the name shown to clients. Deleting a client keeps its monitors and servers, as yours.
+
 ## Auto-restart
 
 Tick **Auto-restart when down** on a monitor and pick its restart command. Two consecutive failed

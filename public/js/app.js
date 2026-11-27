@@ -13,6 +13,7 @@ import { build as Incidents } from './pages/incidents.js';
 import { build as Logs } from './pages/logs.js';
 import { build as Security } from './pages/security.js';
 import { build as Hosts } from './pages/hosts.js';
+import { build as Clients } from './pages/clients.js';
 import { build as Integrations } from './pages/integrations.js';
 import { build as Settings } from './pages/settings.js';
 
@@ -25,6 +26,7 @@ const PAGES = [
   ['logs', 'Logs', 'logs', 'Read-only tail of the services whitelisted in .env', Logs],
   ['security', 'Security', 'shield', 'Ssh logins, port changes, fail2ban bans and restart attempts', Security],
   ['hosts', 'Hosts', 'server', 'The hub and every agent that pushes metrics to it', Hosts],
+  ['clients', 'Clients', 'layers', 'Alerts, a status page and a weekly report for each client', Clients],
   ['integrations', 'Integrations', 'plug', 'Telegram delivery, n8n access and the LLM', Integrations],
   ['settings', 'Settings', 'settings', 'Cadence, thresholds and the .env keys the server reads', Settings],
 ];

@@ -118,6 +118,10 @@ export const cfg = {
   passwordLogin: bool('PASSWORD_LOGIN', true),
   googleTokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
 
+  // Clients: the name shown on client status pages, reports and alert emails; weekday of the weekly report (1 = Monday).
+  brandName: process.env.BRAND_NAME || 'Pulse Monitor',
+  weeklyReportDay: Math.min(Math.max(num('WEEKLY_REPORT_DAY', 1), 0), 6),
+
   pushPublic: process.env.VAPID_PUBLIC_KEY || '',
   pushPrivate: process.env.VAPID_PRIVATE_KEY || '',
   pushSubject: process.env.VAPID_SUBJECT || 'mailto@admin.local',
